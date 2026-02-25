@@ -68,7 +68,7 @@ export const annotazioneResolvers = {
         _parent: unknown,
         args: { foto360Id: string }
       ) => {
-        return pubsub.asyncIterableIterator([
+        return pubsub.asyncIterator([
           `NUOVA_ANNOTAZIONE_${args.foto360Id}`,
         ]);
       },
