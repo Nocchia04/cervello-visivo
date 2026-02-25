@@ -29,7 +29,8 @@
               "NSExceptionAllowsInsecureHTTPLoads": true
             }
           }
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -42,11 +43,16 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "ACCESS_WIFI_STATE"
-      ],
-      "usesCleartextTraffic": true
+      ]
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "809c5b24-3f4e-4f99-acb2-1a7e55adfd1c"
+      }
+    }
   }
 }
