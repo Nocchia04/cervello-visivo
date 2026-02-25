@@ -1,0 +1,26 @@
+type Annotazione {
+  id: ID!
+  foto360Id: ID!
+  testo: String!
+  x: Float!
+  y: Float!
+  autore: User!
+  createdAt: String!
+}
+
+extend type Query {
+  annotazioni(foto360Id: ID!): [Annotazione!]!
+}
+
+extend type Mutation {
+  creaAnnotazione(
+    foto360Id: ID!
+    testo: String!
+    x: Float!
+    y: Float!
+  ): Annotazione!
+}
+
+type Subscription {
+  nuovaAnnotazione(foto360Id: ID!): Annotazione!
+}

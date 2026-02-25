@@ -1,0 +1,49 @@
+enum StatoCantiere {
+  ATTIVO
+  ARCHIVIATO
+}
+
+type Cantiere {
+  id: ID!
+  nome: String!
+  indirizzo: String!
+  stato: StatoCantiere!
+  thumbnailUrl: String
+  piantine: [Piantina!]!
+  createdAt: String!
+  updatedAt: String!
+}
+
+input CreateCantiereInput {
+  nome: String!
+  indirizzo: String!
+}
+
+input UpdateCantiereInput {
+  nome: String
+  indirizzo: String
+  thumbnailUrl: String
+}
+
+extend type Query {
+  cantieri(includiArchiviati: Boolean): [Cantiere!]!
+  cantiere(id: ID!): Cantiere
+}
+
+type CantiereUser {
+  id: ID!
+  cantiereId: String!
+  userId: String!
+  createdAt: String!
+  user: User
+  cantiere: Cantiere
+}
+
+extend type Mutation {
+  creaCantiere(input: CreateCantiereInput!): Cantiere!
+  aggiornaCantiere(id: ID!, input: UpdateCantiereInput!): Cantiere!
+  archiviaCantiere(id: ID!): Cantiere!
+  riattivaCantiere(id: ID!): Cantiere!
+  assegnaOperatoreCantiere(cantiereId: ID!, userId: ID!): CantiereUser!
+  rimuoviOperatoreCantiere(cantiereId: ID!, userId: ID!): CantiereUser!
+}

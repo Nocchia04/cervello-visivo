@@ -1,0 +1,18 @@
+type Invito {
+  id: ID!
+  email: String!
+  token: String!
+  role: UserRole!
+  usedAt: String
+  expiresAt: String!
+  createdAt: String!
+  createdBy: User!
+}
+
+extend type Query {
+  inviti: [Invito!]!
+}
+
+extend type Mutation {
+  creaInvito(email: String!, role: UserRole): Invito!
+}

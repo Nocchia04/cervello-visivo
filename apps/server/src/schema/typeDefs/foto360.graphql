@@ -1,0 +1,27 @@
+scalar JSON
+
+type Foto360 {
+  id: ID!
+  puntoDiScattoId: ID!
+  url: String!
+  thumbnailUrl: String
+  is360: Boolean!
+  timestamp: String!
+  metadata: JSON
+  uploadedBy: User!
+  createdAt: String!
+}
+
+extend type Query {
+  foto360(puntoId: ID!, dataInizio: String, dataFine: String): [Foto360!]!
+  fotoSingola(id: ID!): Foto360
+}
+
+extend type Mutation {
+  uploadFoto360(
+    puntoDiScattoId: ID!
+    url: String!
+    thumbnailUrl: String
+    metadata: JSON
+  ): Foto360!
+}

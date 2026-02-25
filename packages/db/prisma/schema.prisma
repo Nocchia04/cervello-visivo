@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  CAPO_CANTIERE
+}
+
+enum StatoCantiere {
+  ATTIVO
+  ARCHIVIATO
+}
+
+// ─── Models ──────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  nome      String
+  cognome   String
+  role      UserRole @default(CAPO_CANTIERE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  foto360      Foto360[]
+  annotazioni  Annotazione[]
+  cantieri     CantiereUser[]
+  inviti       Invito[]       @relation("InvitiCreati")
+
+  @@map("users")
+}
+
+model Cantiere {
+  id        String          @id @default(cuid())
+  nome      String
+  indirizzo String
+  stato        StatoCantiere   @default(ATTIVO)
+  thumbnailUrl String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  piantine  Piantina[]
+  utenti    CantiereUser[]
+
+  @@map("cantieri")
+}
+
+model CantiereUser {
+  id         String   @id @default(cuid())
+  cantiereId String
+  userId     String
+  createdAt  DateTime @default(now())
+
+  cantiere Cantiere @relation(fields: [cantiereId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cantiereId, userId])
+  @@map("cantiere_users")
+}
+
+model Piantina {
+  id         String   @id @default(cuid())
+  cantiereId String
+  nome       String
+  livello    Int
+  fileUrl    String
+  larghezza  Int
+  altezza    Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cantiere      Cantiere        @relation(fields: [cantiereId], references: [id], onDelete: Cascade)
+  puntiDiScatto PuntoDiScatto[]
+
+  @@map("piantine")
+}
+
+model PuntoDiScatto {
+  id         String   @id @default(cuid())
+  piantinaId String
+  nome       String
+  x          Float
+  y          Float
+  createdAt  DateTime @default(now())
+
+  piantina Piantina  @relation(fields: [piantinaId], references: [id], onDelete: Cascade)
+  foto360  Foto360[]
+
+  @@map("punti_di_scatto")
+}
+
+model Foto360 {
+  id               String   @id @default(cuid())
+  puntoDiScattoId  String
+  url              String
+  thumbnailUrl     String?
+  is360            Boolean  @default(true)
+  timestamp        DateTime @default(now())
+  metadata         Json?
+  uploadedById     String
+  createdAt        DateTime @default(now())
+
+  puntoDiScatto PuntoDiScatto @relation(fields: [puntoDiScattoId], references: [id], onDelete: Cascade)
+  uploadedBy    User          @relation(fields: [uploadedById], references: [id])
+  annotazioni   Annotazione[]
+
+  @@map("foto_360")
+}
+
+model Annotazione {
+  id        String   @id @default(cuid())
+  foto360Id String
+  testo     String
+  x         Float
+  y         Float
+  autoreId  String
+  createdAt DateTime @default(now())
+
+  foto360 Foto360 @relation(fields: [foto360Id], references: [id], onDelete: Cascade)
+  autore  User    @relation(fields: [autoreId], references: [id])
+
+  @@map("annotazioni")
+}
+
+model Invito {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  token       String    @unique @default(cuid())
+  role        UserRole  @default(CAPO_CANTIERE)
+  usedAt      DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  createdById String
+
+  createdBy User @relation("InvitiCreati", fields: [createdById], references: [id])
+
+  @@map("inviti")
+}

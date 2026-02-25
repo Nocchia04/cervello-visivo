@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --surface-hover: #f3f4f6;
+    --border: #e5e7eb;
+    --border-strong: #d1d5db;
+    --accent: #111827;
+    --accent-hover: #1f2937;
+    --accent-glow: rgba(17, 24, 39, 0.08);
+    --text: #111827;
+    --text-muted: #6b7280;
+    --text-subtle: #9ca3af;
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --danger-bg: #fef2f2;
+    --radius: 12px;
+    --sidebar-width: 260px;
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all duration-150 cursor-pointer border-0 outline-none;
+    background: var(--accent);
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+  .btn-primary:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-150 cursor-pointer outline-none;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+  }
+  .btn-secondary:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-150 cursor-pointer border-0 outline-none;
+    color: var(--text-muted);
+    background: transparent;
+  }
+  .btn-ghost:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  /* ── Inputs ──────────────────────────────────────────────────────── */
+  .input-field {
+    @apply w-full px-4 py-2.5 rounded-xl text-sm transition-all duration-150 outline-none;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .input-field::placeholder {
+    color: var(--text-subtle);
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────── */
+  .card {
+    @apply rounded-2xl p-6;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────── */
+  .badge-attivo {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid #bbf7d0;
+  }
+
+  .badge-archiviato {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+    background: var(--surface-hover);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Section label ───────────────────────────────────────────────── */
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-wider;
+    color: var(--text-subtle);
+  }
+}

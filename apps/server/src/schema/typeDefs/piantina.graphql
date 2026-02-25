@@ -1,0 +1,49 @@
+type Piantina {
+  id: ID!
+  cantiereId: ID!
+  nome: String!
+  livello: Int!
+  fileUrl: String!
+  larghezza: Int!
+  altezza: Int!
+  puntiDiScatto: [PuntoDiScatto!]!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type PuntoDiScatto {
+  id: ID!
+  piantinaId: ID!
+  nome: String!
+  x: Float!
+  y: Float!
+  foto360: [Foto360!]!
+  createdAt: String!
+}
+
+extend type Query {
+  piantine(cantiereId: ID!): [Piantina!]!
+  piantina(id: ID!): Piantina
+}
+
+extend type Mutation {
+  caricaPiantina(
+    cantiereId: ID!
+    nome: String!
+    livello: Int!
+    fileUrl: String!
+    larghezza: Int!
+    altezza: Int!
+  ): Piantina!
+  aggiungiPuntoDiScatto(
+    piantinaId: ID!
+    nome: String!
+    x: Float!
+    y: Float!
+  ): PuntoDiScatto!
+  spostaPuntoDiScatto(
+    id: ID!
+    x: Float!
+    y: Float!
+  ): PuntoDiScatto!
+}

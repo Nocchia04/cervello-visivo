@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Cervello Visivo",
+    "slug": "cervello-visivo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "cervello-visivo",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E40AF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cervellovisivo.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Necessario per connettersi alla camera Ricoh Theta via WiFi",
+        "NSCameraUsageDescription": "Necessario per la connessione alla camera Ricoh Theta",
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "192.168.1.1": {
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "TLSv1.0",
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1E40AF"
+      },
+      "package": "com.cervellovisivo.mobile",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE"
+      ],
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

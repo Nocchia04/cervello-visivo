@@ -1,0 +1,35 @@
+{
+  "name": "cervello-visivo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cervello Visivo - NRG Gold Ecosystem | Piattaforma di documentazione visiva cantieri con foto 360",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f postgres",
+    "docker:reset": "docker compose down -v && docker compose up -d",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:server": "npm run dev -w apps/server",
+    "dev:mobile": "npm run start -w apps/mobile",
+    "build:web": "npm run build -w apps/web",
+    "build:server": "npm run build -w apps/server",
+    "db:generate": "npm run generate -w packages/db",
+    "db:migrate": "npm run migrate -w packages/db",
+    "db:push": "npm run push -w packages/db",
+    "db:seed": "npm run seed -w packages/db",
+    "db:studio": "npm run studio -w packages/db",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

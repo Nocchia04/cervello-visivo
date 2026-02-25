@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Cervello Visivo (Dev)",
+      "Group": "Docker",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "cervello_visivo",
+      "Username": "cervello",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/pgpassfile"
+    }
+  }
+}

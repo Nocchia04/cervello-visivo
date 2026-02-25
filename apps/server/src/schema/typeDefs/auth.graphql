@@ -1,0 +1,36 @@
+type User {
+  id: ID!
+  email: String!
+  nome: String!
+  cognome: String!
+  role: UserRole!
+  createdAt: String!
+  updatedAt: String!
+}
+
+enum UserRole {
+  ADMIN
+  CAPO_CANTIERE
+}
+
+type AuthPayload {
+  token: String!
+  user: User!
+}
+
+type Query {
+  me: User
+  utenti: [User!]!
+}
+
+type Mutation {
+  login(email: String!, password: String!): AuthPayload!
+  register(
+    email: String!
+    password: String!
+    nome: String!
+    cognome: String!
+    role: UserRole
+  ): AuthPayload!
+  creaOperatore(email: String!, password: String!, nome: String!, cognome: String!): AuthPayload!
+}
