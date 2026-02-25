@@ -11,7 +11,7 @@ import { createClient } from "graphql-ws";
 import { getToken } from "./auth";
 
 const httpLink = new HttpLink({
-  uri: "http://localhost:4000/graphql",
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_URL ?? "http://localhost:4000/graphql",
 });
 
 const authLink = setContext((_, { headers }) => {
@@ -28,7 +28,7 @@ const wsLink =
   typeof window !== "undefined"
     ? new GraphQLWsLink(
         createClient({
-          url: "ws://localhost:4000/graphql",
+          url: process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000/graphql",
           connectionParams: () => ({
             authorization: getToken() ? `Bearer ${getToken()}` : "",
           }),
