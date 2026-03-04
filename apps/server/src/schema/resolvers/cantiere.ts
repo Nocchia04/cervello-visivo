@@ -33,6 +33,17 @@ export const cantiereResolvers = {
       const includiArchiviati =
         ctx.user!.role === "CAPO_CANTIERE" ? false : (args.includiArchiviati ?? false);
 
+      // CAPO_CANTIERE vede solo i cantieri a cui è assegnato
+      if (ctx.user!.role === "CAPO_CANTIERE") {
+        return ctx.prisma.cantiere.findMany({
+          where: {
+            stato: "ATTIVO",
+            utenti: { some: { userId: ctx.user!.userId } },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+      }
+
       const where = includiArchiviati ? {} : { stato: "ATTIVO" as const };
 
       return ctx.prisma.cantiere.findMany({
