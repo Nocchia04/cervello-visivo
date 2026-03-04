@@ -10,6 +10,7 @@ import {
   Image,
   FlatList,
   Modal,
+  Platform,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Stack } from "expo-router";
@@ -18,6 +19,15 @@ import * as FileSystem from "expo-file-system";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ricohClient } from "../../src/services/ricoh/RicohClient";
+import { connectToCamera, disconnectFromCamera } from "../../src/services/ricoh/ThetaWifi";
+import {
+  scanAndConnect,
+  connectByPeripheralId,
+  takePictureViaBle,
+  disconnectBle,
+  isBluetoothConnected,
+} from "../../src/modules/theta/ble/ThetaBleService";
+import { getCameraCredentials, getThetaBleCredentials } from "../../src/lib/storage";
 import { uploadQueue } from "../../src/services/upload/UploadQueue";
 import { RicohPreview } from "../../src/components/RicohPreview";
 import type { RicohPreviewHandle } from "../../src/components/RicohPreview";
@@ -26,7 +36,7 @@ import { UploadQueueBadge } from "../../src/components/UploadQueueBadge";
 import { colors, spacing, radius, typography, shadow } from "../../src/lib/theme";
 import type { OscFileEntry } from "../../src/services/ricoh/types";
 
-type CameraStatus = "disconnected" | "connecting" | "connected" | "error";
+type BleStatus = "idle" | "connecting" | "connected" | "error" | "no_setup";
 
 export default function ScattoScreen() {
   const { puntoId, puntoNome, piantinaId, piantinaNome } = useLocalSearchParams<{
@@ -39,10 +49,10 @@ export default function ScattoScreen() {
   const insets = useSafeAreaInsets();
   const previewRef = useRef<RicohPreviewHandle>(null);
 
-  const [cameraStatus, setCameraStatus] = useState<CameraStatus>("disconnected");
-  const [cameraInfo, setCameraInfo] = useState<string | null>(null);
-  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [bleStatus, setBleStatus] = useState<BleStatus>("idle");
+  const [bleStatusMsg, setBleStatusMsg] = useState("");
   const [isTakingPicture, setIsTakingPicture] = useState(false);
+  const [takingStep, setTakingStep] = useState("");
   const [lastPhotoUri, setLastPhotoUri] = useState<string | null>(null);
   const [cameraFiles, setCameraFiles] = useState<OscFileEntry[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
@@ -69,66 +79,145 @@ export default function ScattoScreen() {
       const result = await ricohClient.listFiles(5);
       setCameraFiles(result.entries ?? []);
     } catch {
-      // Non-critical — just no thumbnails
+      // Non-critical
     } finally {
       setLoadingFiles(false);
     }
   }, []);
 
-  const connectCamera = useCallback(async () => {
-    setCameraStatus("connecting");
+  // Auto-connette BLE all'apertura della schermata
+  useEffect(() => {
+    let cancelled = false;
+
+    async function autoConnect() {
+      // Se già connessa (es. si torna allo screen senza aver chiuso l'app), non riscannare
+      if (isBluetoothConnected()) {
+        const { deviceName, setupComplete } = await getThetaBleCredentials();
+        if (!cancelled) {
+          setBleStatus("connected");
+          setBleStatusMsg(deviceName ?? "RICOH THETA SC2");
+          loadCameraFiles();
+        }
+        return;
+      }
+
+      setBleStatus("connecting");
+      setBleStatusMsg("Ricerca camera...");
+      try {
+        const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
+        if (!setupComplete || !uuid || !deviceName) {
+          if (!cancelled) setBleStatus("no_setup");
+          return;
+        }
+        if (!cancelled) setBleStatusMsg(`Connessione BLE (${deviceName})...`);
+
+        if (peripheralId) {
+          // Connessione diretta — nessuna scansione, molto più veloce
+          try {
+            await connectByPeripheralId(peripheralId, uuid);
+          } catch {
+            // Fallback a scan se connessione diretta fallisce (es. camera riparata/sostituita)
+            await scanAndConnect(deviceName, uuid);
+          }
+        } else {
+          await scanAndConnect(deviceName, uuid);
+        }
+
+        if (!cancelled) {
+          setBleStatus("connected");
+          setBleStatusMsg(deviceName);
+          loadCameraFiles();
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBleStatus("error");
+          setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
+        }
+      }
+    }
+
+    autoConnect();
+
+    return () => {
+      cancelled = true;
+      // Non disconnettere BLE: _device è singleton, rimane connesso tra schermate.
+      // Disconnetti solo il WiFi camera se aperto (download in corso).
+      disconnectFromCamera().catch(() => {});
+    };
+  }, []);
+
+  const retryBleConnect = useCallback(async () => {
+    setBleStatus("connecting");
+    setBleStatusMsg("Ricerca camera...");
     try {
-      const info = await ricohClient.getInfo();
-      setCameraInfo(`${info.model} v${info.firmwareVersion}`);
+      const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
+      if (!setupComplete || !uuid || !deviceName) {
+        setBleStatus("no_setup");
+        return;
+      }
+      setBleStatusMsg(`Connessione BLE (${deviceName})...`);
 
-      const state = await ricohClient.getState();
-      setBatteryLevel(Math.round(state.state.batteryLevel * 100));
+      if (peripheralId) {
+        try {
+          await connectByPeripheralId(peripheralId, uuid);
+        } catch {
+          await scanAndConnect(deviceName, uuid);
+        }
+      } else {
+        await scanAndConnect(deviceName, uuid);
+      }
 
-      setCameraStatus("connected");
-      // Load recent files after connecting
+      setBleStatus("connected");
+      setBleStatusMsg(deviceName);
       loadCameraFiles();
     } catch (err) {
-      setCameraStatus("error");
-      Alert.alert(
-        "Connessione fallita",
-        "Assicurati di essere connesso alla rete WiFi della Ricoh Theta.\n\n" +
-          (err instanceof Error ? err.message : "Errore sconosciuto")
-      );
+      setBleStatus("error");
+      setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
     }
   }, [loadCameraFiles]);
 
   const takePicture = useCallback(async () => {
-    if (cameraStatus !== "connected") return;
+    if (bleStatus !== "connected") return;
 
     setIsTakingPicture(true);
-    // Stop the MJPEG stream — camera can't stream and shoot simultaneously
+    setTakingStep("");
     previewRef.current?.stopStream();
+
+    const isAndroid10 = Platform.OS === "android" && (Platform.Version as number) >= 29;
+
     try {
-      const fileUrl = await ricohClient.takePicture();
-      const localUri = await ricohClient.downloadFile(fileUrl);
+      // ── 1. Scatto via BLE (nessun WiFi necessario) ────────────────────────
+      setTakingStep("Scatto...");
+      await takePictureViaBle();
+      setTakingStep("Scatto completato. Download foto...");
+
+      // ── 2. Connetti WiFi per scaricare il file ────────────────────────────
+      if (isAndroid10) {
+        const { ssid, password } = await getCameraCredentials();
+        if (ssid) await connectToCamera(ssid, password ?? "");
+      }
+
+      // ── 3. Trova il file più recente e scaricalo ──────────────────────────
+      const files = await ricohClient.listFiles(1);
+      const latest = files.entries?.[0];
+      if (!latest?.fileUrl) throw new Error("Nessun file trovato sulla camera");
+      const localUri = await ricohClient.downloadFile(latest.fileUrl);
+
+      // ── 4. Disconnetti WiFi (BLE rimane attivo) ───────────────────────────
+      if (isAndroid10) disconnectFromCamera().catch(() => {});
+
+      setTakingStep("");
       const queueItemId = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const timestamp = new Date().toISOString();
-
-      // Show 360° preview — user must confirm before upload
-      setPendingPhoto({ localUri, queueId: queueItemId, timestamp });
-
-      // Refresh battery + file list in background
-      try {
-        const state = await ricohClient.getState();
-        setBatteryLevel(Math.round(state.state.batteryLevel * 100));
-      } catch {}
+      setPendingPhoto({ localUri, queueId: queueItemId, timestamp: new Date().toISOString() });
       loadCameraFiles();
     } catch (err) {
-      Alert.alert(
-        "Errore scatto",
-        err instanceof Error ? err.message : "Errore durante lo scatto"
-      );
-      // Resume preview only on error (on success the modal is shown)
+      setTakingStep("");
+      Alert.alert("Errore scatto", err instanceof Error ? err.message : "Errore durante lo scatto");
       previewRef.current?.startStream();
     } finally {
       setIsTakingPicture(false);
     }
-  }, [cameraStatus, loadCameraFiles]);
+  }, [bleStatus, loadCameraFiles]);
 
   const handleConfermaPhoto = useCallback(async () => {
     if (!pendingPhoto) return;
@@ -219,7 +308,7 @@ export default function ScattoScreen() {
     uploadQueue.getPendingCount().then(setPendingCount);
   }, []);
 
-  const isCapturing = cameraStatus !== "connected" || isTakingPicture;
+  const isCapturing = bleStatus !== "connected" || isTakingPicture;
 
   return (
     <>
@@ -243,71 +332,71 @@ export default function ScattoScreen() {
           <UploadQueueBadge />
         </View>
 
-        {/* Camera section */}
+        {/* Camera BLE status */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Fotocamera</Text>
 
-          {cameraStatus === "disconnected" && (
+          {bleStatus === "no_setup" && (
             <View style={styles.statusCardCentered}>
-              <Feather name="wifi-off" size={32} color={colors.textSubtle} />
-              <Text style={styles.statusCardTitle}>Camera disconnessa</Text>
+              <Feather name="bluetooth" size={32} color={colors.textSubtle} />
+              <Text style={styles.statusCardTitle}>BLE non configurato</Text>
               <Text style={styles.statusCardHint}>
-                Collegati alla rete WiFi della Ricoh Theta
+                Vai in Impostazioni e completa il setup della camera per abilitare lo scatto Bluetooth.
               </Text>
-              <TouchableOpacity
-                style={styles.connectButton}
-                onPress={connectCamera}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.connectButtonText}>Connetti Camera</Text>
-              </TouchableOpacity>
             </View>
           )}
 
-          {cameraStatus === "connecting" && (
+          {bleStatus === "connecting" && (
             <View style={styles.statusCardCentered}>
               <ActivityIndicator color={colors.accent} size="large" />
-              <Text style={styles.connectingText}>Connessione in corso...</Text>
+              <Text style={styles.connectingText}>Connessione BLE...</Text>
+              {!!bleStatusMsg && (
+                <Text style={styles.discoveryStatusText}>{bleStatusMsg}</Text>
+              )}
             </View>
           )}
 
-          {cameraStatus === "connected" && (
+          {bleStatus === "connected" && (
             <View style={styles.connectedRow}>
               <View style={styles.connectedDot} />
               <View style={styles.connectedInfo}>
-                {cameraInfo && (
-                  <Text style={styles.connectedModel}>{cameraInfo}</Text>
-                )}
-                {batteryLevel !== null && (
-                  <Text style={styles.batteryText}>Batteria: {batteryLevel}%</Text>
-                )}
+                <Text style={styles.connectedModel}>RICOH THETA SC2</Text>
+                <Text style={styles.batteryText}>
+                  <Feather name="bluetooth" size={11} /> BLE · {bleStatusMsg}
+                </Text>
               </View>
-              <Feather name="battery" size={18} color={colors.success} />
+              <Feather name="bluetooth" size={18} color={colors.success} />
             </View>
           )}
 
-          {cameraStatus === "error" && (
+          {bleStatus === "error" && (
             <View style={styles.errorCard}>
               <Feather name="alert-circle" size={32} color={colors.danger} />
-              <Text style={styles.errorText}>
-                Connessione fallita. Verifica il WiFi della Ricoh Theta.
-              </Text>
-              <TouchableOpacity
-                style={styles.retryConnectButton}
-                onPress={connectCamera}
-                activeOpacity={0.8}
-              >
+              <Text style={styles.errorText}>{bleStatusMsg}</Text>
+              <TouchableOpacity style={styles.retryConnectButton} onPress={retryBleConnect} activeOpacity={0.8}>
                 <Text style={styles.retryConnectText}>Riprova</Text>
               </TouchableOpacity>
             </View>
           )}
+
+          {(bleStatus === "idle") && (
+            <View style={styles.statusCardCentered}>
+              <ActivityIndicator color={colors.accent} size="large" />
+              <Text style={styles.connectingText}>Avvio...</Text>
+            </View>
+          )}
+
+          {/* Step download in progress */}
+          {isTakingPicture && !!takingStep && (
+            <Text style={[styles.discoveryStatusText, { marginTop: spacing.sm }]}>{takingStep}</Text>
+          )}
         </View>
 
-        {/* Live Preview */}
-        {cameraStatus === "connected" && (
+        {/* Live Preview — richiede WiFi, disponibile solo quando BLE connesso */}
+        {bleStatus === "connected" && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Live Preview</Text>
-            <RicohPreview ref={previewRef} isConnected={cameraStatus === "connected"} />
+            <RicohPreview ref={previewRef} isConnected={bleStatus === "connected"} />
           </View>
         )}
 
@@ -333,15 +422,19 @@ export default function ScattoScreen() {
           </TouchableOpacity>
           <Text style={styles.captureLabel}>
             {isTakingPicture
-              ? "Scatto in corso..."
-              : cameraStatus === "connected"
+              ? takingStep || "Scatto in corso..."
+              : bleStatus === "connected"
               ? "Scatta 360°"
-              : "Connetti la camera"}
+              : bleStatus === "connecting"
+              ? "Connessione BLE..."
+              : bleStatus === "no_setup"
+              ? "Setup BLE richiesto"
+              : "Camera non connessa"}
           </Text>
         </View>
 
         {/* Camera files thumbnails */}
-        {cameraStatus === "connected" && (
+        {bleStatus === "connected" && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Ultime foto sulla camera</Text>
             {loadingFiles ? (
@@ -569,6 +662,13 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textMuted,
   },
+  discoveryStatusText: {
+    ...typography.caption,
+    color: colors.accent,
+    textAlign: "center",
+    fontStyle: "italic",
+    marginTop: 2,
+  },
 
   // Connected row
   connectedRow: {
@@ -598,6 +698,28 @@ const styles = StyleSheet.create({
   batteryText: {
     ...typography.bodySmall,
     color: colors.textMuted,
+  },
+  discoveryStatusConnected: {
+    ...typography.caption,
+    color: colors.textSubtle,
+    marginTop: 2,
+  },
+  connectedRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
+  modeBadge: {
+    backgroundColor: colors.accentLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  modeBadgeText: {
+    ...typography.caption,
+    color: colors.accent,
+    fontWeight: "700",
   },
 
   // Error

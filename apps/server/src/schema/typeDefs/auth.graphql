@@ -6,6 +6,7 @@ type User {
   role: UserRole!
   createdAt: String!
   updatedAt: String!
+  cantieri: [CantiereUser!]!
 }
 
 enum UserRole {

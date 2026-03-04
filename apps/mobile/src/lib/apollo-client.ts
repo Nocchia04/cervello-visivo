@@ -12,9 +12,9 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { getAuthToken } from "./storage";
 
-// Su iPhone fisico "localhost" punta al telefono, non al Mac.
-// Constants.expoConfig.hostUri contiene l'IP del Mac usato da Metro
-// (es. "192.168.1.42:8081") — funziona su device fisico, simulatore e emulatore.
+const PROD_HTTP_URL = "https://api-holobuilder.aitalia-demo.it/graphql";
+const PROD_WS_URL  = "wss://api-holobuilder.aitalia-demo.it/graphql";
+
 function getServerHost(): string {
   if (Platform.OS === "android") return "10.0.2.2";
   const metroHost = Constants.expoConfig?.hostUri?.split(":").shift();
@@ -22,8 +22,8 @@ function getServerHost(): string {
 }
 
 const HOST = getServerHost();
-const HTTP_URL = `http://${HOST}:4000/graphql`;
-const WS_URL = `ws://${HOST}:4000/graphql`;
+const HTTP_URL = PROD_HTTP_URL;
+const WS_URL   = PROD_WS_URL;
 
 const httpLink = new HttpLink({ uri: HTTP_URL });
 

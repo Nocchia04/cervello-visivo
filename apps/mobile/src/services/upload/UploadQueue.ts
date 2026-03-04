@@ -1,15 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Network from "expo-network";
-import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { STORAGE_KEYS, getAuthToken } from "../../lib/storage";
 import { apolloClient } from "../../lib/apollo-client";
 import { UPLOAD_FOTO360_MUTATION } from "../../graphql/mutations";
 
-function getServerHost(): string {
-  if (Platform.OS === "android") return "10.0.2.2";
+const PROD_SERVER_URL = "https://api-holobuilder.aitalia-demo.it";
+
+function getServerBaseUrl(): string {
+  if (!__DEV__) return PROD_SERVER_URL;
+  // Usa l'IP di Metro (uguale per Android fisico e iOS) — 10.0.2.2 è solo per emulatore
   const metroHost = Constants.expoConfig?.hostUri?.split(":").shift();
-  return metroHost ?? "localhost";
+  return `http://${metroHost ?? "localhost"}:4000`;
 }
 
 export interface QueueItem {
@@ -47,11 +48,9 @@ class UploadQueueService {
     });
     await this.saveQueue(queue);
 
-    // Try to process immediately if online
-    const networkState = await Network.getNetworkStateAsync();
-    if (networkState.isConnected && networkState.isInternetReachable) {
-      this.processQueue();
-    }
+    // Avvia subito la queue — isInternetReachable può essere null su Android (stato
+    // sconosciuto), quindi non usarlo come gate. Se l'upload fallisce, il retry gestisce.
+    this.processQueue();
   }
 
   async processQueue(): Promise<void> {
@@ -59,11 +58,6 @@ class UploadQueueService {
     this.processing = true;
 
     try {
-      const networkState = await Network.getNetworkStateAsync();
-      if (!networkState.isConnected || !networkState.isInternetReachable) {
-        return;
-      }
-
       const queue = await this.getQueue();
       const pendingItems = queue.filter(
         (item) => item.status === "pending" || item.status === "failed"
@@ -94,7 +88,7 @@ class UploadQueueService {
   }
 
   private async uploadItem(item: QueueItem): Promise<void> {
-    const host = getServerHost();
+    const serverBaseUrl = getServerBaseUrl();
 
     // 1. Upload the local file to server via multipart form
     const formData = new FormData();
@@ -105,12 +99,14 @@ class UploadQueueService {
     } as any);
 
     const token = await getAuthToken();
-    const uploadRes = await fetch(`http://${host}:4000/upload`, {
+    const uploadRes = await fetch(`${serverBaseUrl}/upload`, {
       method: "POST",
       body: formData,
       headers: {
+        // NON impostare Content-Type manualmente con FormData:
+        // fetch lo setta automaticamente con il boundary corretto.
+        // Impostarlo a mano rimuove il boundary e il server non riesce a parsare il body.
         Authorization: token ? `Bearer ${token}` : "",
-        "Content-Type": "multipart/form-data",
       },
     });
 
@@ -119,7 +115,7 @@ class UploadQueueService {
     }
 
     const uploadData = await uploadRes.json();
-    const publicUrl = `http://${host}:4000${uploadData.url}`;
+    const publicUrl = `${serverBaseUrl}${uploadData.url}`;
 
     // 2. Register the photo via GraphQL mutation with the public URL
     await apolloClient.mutate({
@@ -139,8 +135,9 @@ class UploadQueueService {
     const queue = await this.getQueue();
     let changed = false;
     for (const item of queue) {
-      if (item.status === "failed" && item.retryCount < MAX_RETRIES) {
+      if (item.status === "failed") {
         item.status = "pending";
+        item.retryCount = 0;
         changed = true;
       }
     }

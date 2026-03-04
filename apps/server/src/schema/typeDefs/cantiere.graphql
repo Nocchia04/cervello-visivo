@@ -10,6 +10,7 @@ type Cantiere {
   stato: StatoCantiere!
   thumbnailUrl: String
   piantine: [Piantina!]!
+  utenti: [CantiereUser!]!
   createdAt: String!
   updatedAt: String!
 }

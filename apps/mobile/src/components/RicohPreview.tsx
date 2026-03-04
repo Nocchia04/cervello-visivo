@@ -1,3 +1,11 @@
+/**
+ * RicohPreview — live preview MJPEG nativo della Ricoh Theta SC2.
+ *
+ * Android 10+: usa ThetaWifiModule (OkHttp legato alla rete camera,
+ *   parser MJPEG in Kotlin, eventi ThetaLiveFrame via NativeEventEmitter).
+ * iOS / Android < 10: live preview non disponibile nativamente.
+ *   L'utente scatta e vede l'anteprima solo dopo il download.
+ */
 import React, {
   useState,
   useEffect,
@@ -6,9 +14,22 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from "react";
-import { View, StyleSheet, Text, ActivityIndicator } from "react-native";
-import { WebView } from "react-native-webview";
-import { RICOH_BASE_URL, OSC_ENDPOINTS, OSC_COMMANDS } from "../services/ricoh/constants";
+import {
+  View,
+  StyleSheet,
+  Text,
+  ActivityIndicator,
+  Image,
+} from "react-native";
+import type { EmitterSubscription } from "react-native";
+import {
+  thetaWifiEmitter,
+  THETA_FRAME_EVENT,
+  THETA_PREVIEW_ERROR_EVENT,
+  startNativeLivePreview,
+  stopNativeLivePreview,
+} from "../services/ricoh/ThetaWifi";
+import { RICOH_BASE_URL } from "../services/ricoh/constants";
 import { colors, spacing, radius, typography } from "../lib/theme";
 
 export interface RicohPreviewHandle {
@@ -20,112 +41,81 @@ interface RicohPreviewProps {
   isConnected: boolean;
 }
 
-// HTML loaded inline — fetch uses the full absolute URL so no baseUrl needed.
-// This avoids the iOS WKWebView "Load Failed" caused by baseUrl navigation attempts.
-const MJPEG_HTML = `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-    img { width: 100%; height: 100%; object-fit: contain; display: none; }
-  </style>
-</head>
-<body>
-  <img id="frame" />
-  <script>
-    var controller = null;
-    var img = document.getElementById('frame');
-    var lastFrame = 0;
-
-    function post(msg) {
-      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
-    }
-
-    async function startStream() {
-      controller = new AbortController();
-      try {
-        var response = await fetch('${RICOH_BASE_URL}${OSC_ENDPOINTS.EXECUTE}', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json; charset=utf-8' },
-          body: JSON.stringify({ name: '${OSC_COMMANDS.GET_LIVE_PREVIEW}' }),
-          signal: controller.signal,
-        });
-
-        if (!response.body) { post({ type: 'error', msg: 'Streams API not available' }); return; }
-
-        var reader = response.body.getReader();
-        var buffer = new Uint8Array(0);
-
-        while (true) {
-          var result = await reader.read();
-          if (result.done) break;
-
-          var chunk = result.value;
-          var merged = new Uint8Array(buffer.length + chunk.length);
-          merged.set(buffer);
-          merged.set(chunk, buffer.length);
-          buffer = merged;
-
-          // Find JPEG SOI (FF D8)
-          var startIdx = -1;
-          for (var i = 0; i < buffer.length - 1; i++) {
-            if (buffer[i] === 0xFF && buffer[i+1] === 0xD8) { startIdx = i; break; }
-          }
-          if (startIdx === -1) continue;
-
-          // Find JPEG EOI (FF D9)
-          for (var j = startIdx + 2; j < buffer.length - 1; j++) {
-            if (buffer[j] === 0xFF && buffer[j+1] === 0xD9) {
-              var jpeg = buffer.slice(startIdx, j + 2);
-              buffer = buffer.slice(j + 2);
-
-              // Throttle to ~10fps
-              var now = Date.now();
-              if (now - lastFrame < 100) break;
-              lastFrame = now;
-
-              // Display via object URL (no base64 needed - faster)
-              var blob = new Blob([jpeg], { type: 'image/jpeg' });
-              var prevSrc = img.src;
-              img.src = URL.createObjectURL(blob);
-              img.style.display = 'block';
-              if (prevSrc.startsWith('blob:')) URL.revokeObjectURL(prevSrc);
-
-              post({ type: 'frame' });
-              break;
-            }
-          }
-
-          if (buffer.length > 512 * 1024) buffer = new Uint8Array(0);
-        }
-      } catch(e) {
-        if (e.name !== 'AbortError') post({ type: 'error', msg: e.message });
-      }
-    }
-
-    startStream();
-  </script>
-</body>
-</html>`;
-
 const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
   ({ isConnected }, ref) => {
-    const webViewRef = useRef<WebView>(null);
-    const [hasFrame, setHasFrame] = useState(false);
+    const [frameUri, setFrameUri] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [streaming, setStreaming] = useState(false);
+    const frameListenerRef = useRef<EmitterSubscription | null>(null);
+    const errorListenerRef = useRef<EmitterSubscription | null>(null);
+    const streamActiveRef = useRef(false);
 
-    const stopStream = useCallback(() => {
-      webViewRef.current?.injectJavaScript(
-        "if(controller){controller.abort();controller=null;} true;"
-      );
+    const stopStream = useCallback(async () => {
+      if (!streamActiveRef.current) return;
+      streamActiveRef.current = false;
+      setStreaming(false);
+      frameListenerRef.current?.remove();
+      frameListenerRef.current = null;
+      errorListenerRef.current?.remove();
+      errorListenerRef.current = null;
+      await stopNativeLivePreview();
     }, []);
 
-    const startStream = useCallback(() => {
-      setHasFrame(false);
+    const startStream = useCallback(async () => {
+      if (streamActiveRef.current) return;
+
+      // Live preview richiede il modulo nativo (Android 10+)
+      if (!thetaWifiEmitter) {
+        setError("Live preview disponibile solo su Android 10+");
+        return;
+      }
+
+      setFrameUri(null);
       setError(null);
-      webViewRef.current?.injectJavaScript("startStream(); true;");
+      setStreaming(true);
+
+      // Registra listener PRIMA di avviare lo stream
+      frameListenerRef.current?.remove();
+      frameListenerRef.current = thetaWifiEmitter.addListener(
+        THETA_FRAME_EVENT,
+        (dataUrl: string) => {
+          if (dataUrl) setFrameUri(dataUrl);
+        }
+      );
+
+      errorListenerRef.current?.remove();
+      errorListenerRef.current = thetaWifiEmitter.addListener(
+        THETA_PREVIEW_ERROR_EVENT,
+        (message: string) => {
+          setError(message ?? "Errore stream");
+          setStreaming(false);
+          streamActiveRef.current = false;
+        }
+      );
+
+      try {
+        const started = await startNativeLivePreview(RICOH_BASE_URL);
+        if (!started) {
+          // Piattaforma non supportata (non dovrebbe succedere se thetaWifiEmitter != null)
+          setStreaming(false);
+          setError("Live preview non supportata su questo dispositivo");
+          frameListenerRef.current?.remove();
+          frameListenerRef.current = null;
+          errorListenerRef.current?.remove();
+          errorListenerRef.current = null;
+          return;
+        }
+        streamActiveRef.current = true;
+      } catch (err) {
+        setStreaming(false);
+        setError(
+          err instanceof Error ? err.message : "Errore avvio stream"
+        );
+        frameListenerRef.current?.remove();
+        frameListenerRef.current = null;
+        errorListenerRef.current?.remove();
+        errorListenerRef.current = null;
+      }
     }, []);
 
     useImperativeHandle(ref, () => ({ stopStream, startStream }), [
@@ -133,28 +123,25 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
       startStream,
     ]);
 
-    const handleMessage = useCallback((event: any) => {
-      try {
-        const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === "frame") setHasFrame(true);
-        if (msg.type === "error") setError(msg.msg ?? "Errore stream");
-      } catch {}
-    }, []);
-
     useEffect(() => {
-      if (!isConnected) {
+      if (isConnected) {
+        startStream();
+      } else {
         stopStream();
-        setHasFrame(false);
+        setFrameUri(null);
         setError(null);
       }
-    }, [isConnected, stopStream]);
+      return () => {
+        stopStream();
+      };
+    }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (!isConnected) {
       return (
         <View style={styles.container}>
           <Text style={styles.placeholderIcon}>📷</Text>
           <Text style={styles.placeholderText}>
-            Connetti la camera per vedere il live preview
+            Connetti la camera per il live preview
           </Text>
         </View>
       );
@@ -162,40 +149,32 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
 
     return (
       <View style={styles.container}>
-        {/* WebView loads the MJPEG HTML with baseUrl = camera IP → same-origin */}
-        <WebView
-          ref={webViewRef}
-          source={{ html: MJPEG_HTML }}
-          style={styles.webview}
-          onMessage={handleMessage}
-          onError={(e) => setError(`Errore WebView: ${e.nativeEvent.description}`)}
-          scrollEnabled={false}
-          bounces={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          mixedContentMode="always"
-          originWhitelist={["*"]}
-        />
+        {/* Frame dalla camera */}
+        {frameUri && (
+          <Image
+            source={{ uri: frameUri }}
+            style={styles.frame}
+            resizeMode="contain"
+          />
+        )}
 
-        {/* Loading overlay until first frame */}
-        {!hasFrame && !error && (
+        {/* Loading: nessun frame ancora */}
+        {streaming && !frameUri && !error && (
           <View style={styles.overlay} pointerEvents="none">
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.loadingText}>Avvio stream...</Text>
+            <Text style={styles.loadingText}>Avvio preview...</Text>
           </View>
         )}
 
-        {/* Error overlay */}
+        {/* Errore */}
         {error && (
           <View style={styles.overlay} pointerEvents="none">
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
-        {/* LIVE badge */}
-        {hasFrame && (
+        {/* Badge LIVE */}
+        {!!frameUri && (
           <View style={styles.liveBadge} pointerEvents="none">
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
@@ -219,9 +198,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  webview: {
-    flex: 1,
-    backgroundColor: "#000",
+  frame: {
+    width: "100%",
+    height: "100%",
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

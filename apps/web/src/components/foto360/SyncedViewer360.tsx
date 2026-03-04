@@ -1,0 +1,199 @@
+"use client";
+
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
+import * as THREE from "three";
+
+export interface SyncedViewer360Handle {
+  setCamera(lon: number, lat: number): void;
+}
+
+interface SyncedViewer360Props {
+  url: string;
+  onRotate?: (lon: number, lat: number) => void;
+}
+
+const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
+  function SyncedViewer360({ url, onRotate }, ref) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+    const materialRef = useRef<THREE.MeshBasicMaterial | null>(null);
+    const isDraggingRef = useRef(false);
+    const lastMouseRef = useRef({ x: 0, y: 0 });
+    const lonRef = useRef(0);
+    const latRef = useRef(0);
+    const rafRef = useRef<number>(0);
+    const onRotateRef = useRef(onRotate);
+
+    const [loading, setLoading] = useState(true);
+
+    // Keep onRotate ref current to avoid stale closure in drag handler
+    useEffect(() => {
+      onRotateRef.current = onRotate;
+    }, [onRotate]);
+
+    // Imperative handle: lets parent set camera orientation
+    useImperativeHandle(ref, () => ({
+      setCamera(lon: number, lat: number) {
+        lonRef.current = lon;
+        latRef.current = lat;
+      },
+    }));
+
+    const loadTexture = useCallback((u: string) => {
+      if (!materialRef.current) return;
+      setLoading(true);
+      const loader = new THREE.TextureLoader();
+      loader.crossOrigin = "anonymous";
+      loader.load(
+        u,
+        (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          if (materialRef.current) {
+            materialRef.current.map = texture;
+            materialRef.current.needsUpdate = true;
+          }
+          setLoading(false);
+        },
+        undefined,
+        () => setLoading(false)
+      );
+    }, []);
+
+    useEffect(() => {
+      loadTexture(url);
+    }, [url, loadTexture]);
+
+    // Three.js init — runs once on mount
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+
+      const w = container.offsetWidth;
+      const h = container.offsetHeight;
+
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(w, h);
+      rendererRef.current = renderer;
+
+      const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 2000);
+      cameraRef.current = camera;
+
+      const scene = new THREE.Scene();
+      const geometry = new THREE.SphereGeometry(500, 64, 32);
+      geometry.scale(-1, 1, 1);
+      const material = new THREE.MeshBasicMaterial();
+      materialRef.current = material;
+      scene.add(new THREE.Mesh(geometry, material));
+
+      const animate = () => {
+        rafRef.current = requestAnimationFrame(animate);
+        const phi = THREE.MathUtils.degToRad(90 - latRef.current);
+        const theta = THREE.MathUtils.degToRad(lonRef.current);
+        const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
+        camera.lookAt(target);
+        renderer.render(scene, camera);
+      };
+      animate();
+
+      const observer = new ResizeObserver(() => {
+        const nw = container.offsetWidth;
+        const nh = container.offsetHeight;
+        renderer.setSize(nw, nh);
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+      });
+      observer.observe(container);
+
+      return () => {
+        cancelAnimationFrame(rafRef.current);
+        observer.disconnect();
+        renderer.dispose();
+        material.dispose();
+        geometry.dispose();
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Mouse drag
+    const onMouseDown = (e: React.MouseEvent) => {
+      isDraggingRef.current = true;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const onMouseMove = (e: React.MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = e.clientX - lastMouseRef.current.x;
+      const dy = e.clientY - lastMouseRef.current.y;
+      lonRef.current -= dx * 0.3;
+      latRef.current = Math.max(-85, Math.min(85, latRef.current + dy * 0.3));
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      onRotateRef.current?.(lonRef.current, latRef.current);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+    };
+
+    // Touch drag
+    const lastTouchRef = useRef({ x: 0, y: 0 });
+    const onTouchStart = (e: React.TouchEvent) => {
+      lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const onTouchMove = (e: React.TouchEvent) => {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - lastTouchRef.current.x;
+      const dy = e.touches[0].clientY - lastTouchRef.current.y;
+      lonRef.current -= dx * 0.3;
+      latRef.current = Math.max(-85, Math.min(85, latRef.current + dy * 0.3));
+      lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      onRotateRef.current?.(lonRef.current, latRef.current);
+    };
+
+    return (
+      <div
+        ref={containerRef}
+        className="relative w-full h-full overflow-hidden bg-black"
+        style={{ cursor: isDraggingRef.current ? "grabbing" : "grab" }}
+      >
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full"
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onMouseUp}
+        />
+        {loading && (
+          <div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            style={{ zIndex: 5 }}
+          >
+            <div
+              className="w-8 h-8 rounded-full border-2 animate-spin"
+              style={{
+                borderColor: "rgba(255,255,255,0.15)",
+                borderTopColor: "rgba(255,255,255,0.7)",
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+export default SyncedViewer360;

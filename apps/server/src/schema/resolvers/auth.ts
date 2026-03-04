@@ -147,5 +147,11 @@ export const authResolvers = {
       parent.createdAt instanceof Date ? parent.createdAt.toISOString() : String(parent.createdAt),
     updatedAt: (parent: { updatedAt?: Date | string }) =>
       parent.updatedAt instanceof Date ? parent.updatedAt.toISOString() : String(parent.updatedAt ?? ""),
+    cantieri: (parent: { id: string }, _args: unknown, ctx: GraphQLContext) =>
+      ctx.prisma.cantiereUser.findMany({
+        where: { userId: parent.id },
+        include: { cantiere: true },
+        orderBy: { createdAt: "asc" },
+      }),
   },
 };

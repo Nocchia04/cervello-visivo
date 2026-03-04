@@ -146,5 +146,20 @@ export const cantiereResolvers = {
         where: { cantiereId: parent.id },
         orderBy: { livello: "asc" },
       }),
+    utenti: (parent: { id: string }, _args: unknown, ctx: GraphQLContext) =>
+      ctx.prisma.cantiereUser.findMany({
+        where: { cantiereId: parent.id },
+        include: { user: true },
+        orderBy: { createdAt: "asc" },
+      }),
+  },
+
+  CantiereUser: {
+    createdAt: (parent: { createdAt: Date | string }) =>
+      parent.createdAt instanceof Date ? parent.createdAt.toISOString() : String(parent.createdAt),
+    user: (parent: { userId: string; user?: unknown }, _args: unknown, ctx: GraphQLContext) =>
+      (parent as any).user ?? ctx.prisma.user.findUnique({ where: { id: parent.userId } }),
+    cantiere: (parent: { cantiereId: string; cantiere?: unknown }, _args: unknown, ctx: GraphQLContext) =>
+      (parent as any).cantiere ?? ctx.prisma.cantiere.findUnique({ where: { id: parent.cantiereId } }),
   },
 };

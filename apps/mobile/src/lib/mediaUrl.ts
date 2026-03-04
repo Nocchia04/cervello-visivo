@@ -14,15 +14,16 @@ function getServerHost(): string {
   return metroHost ?? "localhost";
 }
 
+const PROD_SERVER = "https://api-holobuilder.aitalia-demo.it";
+
 /**
  * Riscrive gli URL salvati dal server (es. "http://localhost:4000/uploads/...")
- * sostituendo localhost/127.0.0.1 con l'IP reale del Mac.
- * Da usare su ogni <Image source={{ uri: resolveMediaUrl(url) }} />.
+ * - In sviluppo: sostituisce localhost/127.0.0.1 con l'IP del Mac
+ * - In produzione: punta al server di produzione
  */
 export function resolveMediaUrl(url: string | null | undefined): string {
   if (!url) return "";
-  const host = getServerHost();
   return url
-    .replace(/localhost/g, host)
-    .replace(/127\.0\.0\.1/g, host);
+    .replace(/http:\/\/localhost(:\d+)?/g, PROD_SERVER)
+    .replace(/http:\/\/127\.0\.0\.1(:\d+)?/g, PROD_SERVER);
 }

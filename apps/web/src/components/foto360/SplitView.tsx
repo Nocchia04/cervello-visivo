@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { safeDate } from "@/lib/dateUtils";
-import InlineViewer360, { InlineViewer360Handle } from "./InlineViewer360";
+import SyncedViewer360, { SyncedViewer360Handle } from "./SyncedViewer360";
 
 interface Foto {
   id: string;
@@ -20,29 +20,29 @@ export default function SplitView({ foto360List }: SplitViewProps) {
   const [rightIndex, setRightIndex] = useState(
     Math.min(1, foto360List.length - 1)
   );
-  const [zoom, setZoom] = useState(1);
   const [syncEnabled, setSyncEnabled] = useState(true);
 
-  const leftViewerRef = useRef<InlineViewer360Handle>(null);
-  const rightViewerRef = useRef<InlineViewer360Handle>(null);
+  const leftViewerRef = useRef<SyncedViewer360Handle>(null);
+  const rightViewerRef = useRef<SyncedViewer360Handle>(null);
+  const syncEnabledRef = useRef(true);
 
-  const handleLeftScroll = useCallback(
-    (scrollLeft: number, scrollTop: number) => {
-      if (syncEnabled && rightViewerRef.current) {
-        rightViewerRef.current.setScrollPosition(scrollLeft, scrollTop);
-      }
-    },
-    [syncEnabled]
-  );
+  // Keep syncEnabledRef in sync so drag callbacks don't use stale closure
+  const handleSyncToggle = (enabled: boolean) => {
+    syncEnabledRef.current = enabled;
+    setSyncEnabled(enabled);
+  };
 
-  const handleRightScroll = useCallback(
-    (scrollLeft: number, scrollTop: number) => {
-      if (syncEnabled && leftViewerRef.current) {
-        leftViewerRef.current.setScrollPosition(scrollLeft, scrollTop);
-      }
-    },
-    [syncEnabled]
-  );
+  const handleLeftRotate = useCallback((lon: number, lat: number) => {
+    if (syncEnabledRef.current) {
+      rightViewerRef.current?.setCamera(lon, lat);
+    }
+  }, []);
+
+  const handleRightRotate = useCallback((lon: number, lat: number) => {
+    if (syncEnabledRef.current) {
+      leftViewerRef.current?.setCamera(lon, lat);
+    }
+  }, []);
 
   if (foto360List.length < 2) {
     return (
@@ -64,43 +64,35 @@ export default function SplitView({ foto360List }: SplitViewProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Controls bar */}
-      <div className="flex items-center justify-between px-4 py-2 rounded-t-lg" style={{ background: "var(--surface-hover)", borderBottom: "1px solid var(--border)" }}>
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={syncEnabled}
-              onChange={(e) => setSyncEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
-            Scroll sincronizzato
-          </label>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Zoom:</span>
-          <button
-            onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-            className="w-7 h-7 flex items-center justify-center rounded bg-white border text-gray-600 hover:bg-gray-50 text-sm"
-          >
-            -
-          </button>
-          <span className="text-sm text-gray-700 w-12 text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            onClick={() => setZoom((z) => Math.min(4, z + 0.25))}
-            className="w-7 h-7 flex items-center justify-center rounded bg-white border text-gray-600 hover:bg-gray-50 text-sm"
-          >
-            +
-          </button>
-        </div>
+      <div
+        className="flex items-center px-4 py-2 rounded-t-lg"
+        style={{
+          background: "var(--surface-hover)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={syncEnabled}
+            onChange={(e) => handleSyncToggle(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          Rotazione sincronizzata
+        </label>
       </div>
 
       {/* Split panels */}
       <div className="flex flex-1 min-h-0">
         {/* Left panel */}
-        <div className="flex-1 flex flex-col border-r">
-          <div className="flex items-center gap-2 p-2" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+        <div className="flex-1 flex flex-col border-r" style={{ borderColor: "var(--border)" }}>
+          <div
+            className="flex items-center gap-2 p-2"
+            style={{
+              background: "var(--surface)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
             <select
               value={leftIndex}
               onChange={(e) => setLeftIndex(Number(e.target.value))}
@@ -114,18 +106,23 @@ export default function SplitView({ foto360List }: SplitViewProps) {
             </select>
           </div>
           <div className="flex-1 min-h-0">
-            <InlineViewer360
+            <SyncedViewer360
               ref={leftViewerRef}
               url={foto360List[leftIndex].url}
-              zoom={zoom}
-              onScroll={handleLeftScroll}
+              onRotate={handleLeftRotate}
             />
           </div>
         </div>
 
         {/* Right panel */}
         <div className="flex-1 flex flex-col">
-          <div className="flex items-center gap-2 p-2" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+          <div
+            className="flex items-center gap-2 p-2"
+            style={{
+              background: "var(--surface)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
             <select
               value={rightIndex}
               onChange={(e) => setRightIndex(Number(e.target.value))}
@@ -139,11 +136,10 @@ export default function SplitView({ foto360List }: SplitViewProps) {
             </select>
           </div>
           <div className="flex-1 min-h-0">
-            <InlineViewer360
+            <SyncedViewer360
               ref={rightViewerRef}
               url={foto360List[rightIndex].url}
-              zoom={zoom}
-              onScroll={handleRightScroll}
+              onRotate={handleRightRotate}
             />
           </div>
         </div>

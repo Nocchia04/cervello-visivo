@@ -139,6 +139,10 @@ export const GET_UTENTI = gql`
       cognome
       role
       createdAt
+      cantieri {
+        id
+        cantiereId
+      }
     }
   }
 `;
