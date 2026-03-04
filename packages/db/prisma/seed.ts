@@ -6,39 +6,33 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding database...");
 
-  // Admin
-  const adminPassword = await bcrypt.hash("Admin1234!", 12);
+  // Pulizia dati esistenti (ordine rispetta le FK)
+  await prisma.annotazione.deleteMany();
+  await prisma.foto360.deleteMany();
+  await prisma.puntoDiScatto.deleteMany();
+  await prisma.piantina.deleteMany();
+  await prisma.cantiereUser.deleteMany();
+  await prisma.cantiere.deleteMany();
+  // Rimuove tutti gli utenti tranne quello che stiamo per creare
+  await prisma.user.deleteMany({ where: { email: { not: "info@nrggold.it" } } });
+
+  // Admin NRG Gold
+  const adminPassword = await bcrypt.hash("HoloBuilder2025!?", 12);
   const admin = await prisma.user.upsert({
-    where: { email: "admin@cervello.local" },
-    update: {},
+    where: { email: "info@nrggold.it" },
+    update: { password: adminPassword, nome: "Admin", cognome: "NRG Gold", role: "ADMIN" },
     create: {
-      email: "admin@cervello.local",
+      email: "info@nrggold.it",
       password: adminPassword,
       nome: "Admin",
-      cognome: "Cervello Visivo",
+      cognome: "NRG Gold",
       role: "ADMIN",
     },
   });
   console.log(`✅ Admin: ${admin.email}`);
 
-  // Capo Cantiere di test
-  const capoPassword = await bcrypt.hash("Capo1234!", 12);
-  const capo = await prisma.user.upsert({
-    where: { email: "capo@cervello.local" },
-    update: {},
-    create: {
-      email: "capo@cervello.local",
-      password: capoPassword,
-      nome: "Mario",
-      cognome: "Rossi",
-      role: "CAPO_CANTIERE",
-    },
-  });
-  console.log(`✅ Capo Cantiere: ${capo.email}`);
-
   console.log("\n📋 Credenziali di accesso:");
-  console.log("  ADMIN          → admin@cervello.local  / Admin1234!");
-  console.log("  CAPO_CANTIERE  → capo@cervello.local   / Capo1234!");
+  console.log("  ADMIN → info@nrggold.it / HoloBuilder2025!?");
 }
 
 main()
