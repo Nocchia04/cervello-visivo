@@ -1,5 +1,6 @@
 package com.cervellovisivo.mobile
 
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -102,6 +103,24 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun isConnected(promise: Promise) {
         promise.resolve(cameraNetwork != null)
+    }
+
+    /**
+     * Verifica che il servizio di Posizione (GPS) sia attivo a livello di sistema.
+     * Necessario per WifiNetworkSpecifier su Android 10+: anche con il permesso
+     * ACCESS_FINE_LOCATION concesso, se Location è spento la connessione fallisce
+     * immediatamente con onUnavailable().
+     */
+    @ReactMethod
+    fun isLocationEnabled(promise: Promise) {
+        val locationManager = reactContext.getSystemService(LocationManager::class.java)
+        val enabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            locationManager.isLocationEnabled
+        } else {
+            locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        }
+        promise.resolve(enabled)
     }
 
     // ── HTTP Request ─────────────────────────────────────────────────────────

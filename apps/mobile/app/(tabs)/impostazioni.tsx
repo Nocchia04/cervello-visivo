@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  Linking,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +21,7 @@ import {
   getCameraSerialAndPassword, setCameraSerial,
   getThetaBleCredentials, setThetaBleCredentials, clearThetaBleCredentials,
 } from '../../src/lib/storage';
-import { connectToCamera, disconnectFromCamera, cameraFetch } from '../../src/services/ricoh/ThetaWifi';
+import { connectToCamera, disconnectFromCamera, cameraFetch, isLocationServicesEnabled } from '../../src/services/ricoh/ThetaWifi';
 import { scanAndConnect, disconnectBle } from '../../src/modules/theta/ble/ThetaBleService';
 import { colors, spacing, radius, typography, shadow } from '../../src/lib/theme';
 
@@ -127,10 +128,18 @@ export default function ImpostazioniScreen() {
     const CAMERA_URL = 'http://192.168.1.1';
 
     try {
-      // ── Step 1: WiFi ──
+      // ── Pre-check: Posizione di sistema attiva ──
       setSetupStep('wifi_connecting');
-      setSetupStatusMsg(`Connessione WiFi a ${ssid}...`);
-      await connectToCamera(ssid, password);
+      setSetupStatusMsg('Verifica servizi di posizione...');
+      const locationOn = await isLocationServicesEnabled();
+      if (!locationOn) {
+        throw new Error(
+          'LOCATION_DISABLED'
+        );
+      }
+
+      // ── Step 1: WiFi ──
+      setSetupStatusMsg(`Connessione WiFi a ${ssid}...\n\nATTENZIONE: apparirà un dialogo Android — tocca "Connetti" per procedere.`);
       setSetupStatusMsg('WiFi connesso. Registro dispositivo BLE...');
 
       // ── Step 2: Registra BLE UUID via HTTP (usa rete camera, non fetch normale) ──
@@ -183,7 +192,13 @@ export default function ImpostazioniScreen() {
       // Cleanup
       try { await disconnectBle(); } catch {}
       try { await disconnectFromCamera(); } catch {}
-      const msg = err instanceof Error ? err.message : 'Errore sconosciuto';
+      const raw = err instanceof Error ? err.message : 'Errore sconosciuto';
+      // Messaggio user-friendly per i casi più comuni
+      const msg = raw === 'LOCATION_DISABLED'
+        ? 'Posizione (GPS) disattivata.\n\nAndroid richiede che la Posizione sia attiva per connettersi al WiFi della camera. Attivala in Impostazioni → Posizione e riprova.'
+        : raw.includes('WIFI_UNAVAILABLE') || raw.includes('Impossibile connettersi')
+          ? `${raw}\n\nSe hai visto un dialogo Android "Connetti a ${serial ? `THETA${serial}.OSC` : 'camera'}?" e non hai toccato "Connetti", riprova e tocca il dialogo entro 15 secondi.`
+          : raw;
       setSetupError(msg);
       setSetupStep('error');
     }
@@ -399,6 +414,19 @@ export default function ImpostazioniScreen() {
                   </Text>
                 </View>
 
+                {/* Warning dialogo Android + Location */}
+                <View style={[styles.infoCard, { marginHorizontal: 0, backgroundColor: '#FEF3C7' }]}>
+                  <Feather name="alert-triangle" size={14} color="#D97706" />
+                  <Text style={[styles.infoText, { color: '#92400E' }]}>
+                    Durante la connessione Android mostrerà un dialogo —{' '}
+                    <Text style={{ fontWeight: '700' }}>tocca "Connetti"</Text> entro 15 secondi.{'\n\n'}
+                    Su Xiaomi/Redmi il dialogo appare nella barra notifiche in alto — abbassa la barra e tocca{' '}
+                    <Text style={{ fontWeight: '700' }}>"Connetti"</Text>.{'\n\n'}
+                    Assicurati che la{' '}
+                    <Text style={{ fontWeight: '700' }}>Posizione (GPS)</Text> sia attiva nelle impostazioni del telefono.
+                  </Text>
+                </View>
+
                 <View style={styles.credPreview}>
                   <Text style={styles.credPreviewLabel}>Camera</Text>
                   <Text style={styles.credPreviewValue}>THETA{serial}.OSC</Text>
@@ -423,6 +451,17 @@ export default function ImpostazioniScreen() {
                   </Text>
                   {!!setupStatusMsg && (
                     <Text style={[styles.rowSub, { textAlign: 'center' }]}>{setupStatusMsg}</Text>
+                  )}
+                  {setupStep === 'wifi_connecting' && (
+                    <View style={[styles.infoCard, { marginHorizontal: 0, backgroundColor: '#FEF3C7' }]}>
+                      <Feather name="bell" size={13} color="#D97706" />
+                      <Text style={[styles.infoText, { color: '#92400E' }]}>
+                        Cerca il dialogo Android{' '}
+                        <Text style={{ fontWeight: '700' }}>"Connetti a THETA{serial}.OSC?"</Text>
+                        {'\n'}Su Xiaomi/Redmi abbassa la barra notifiche. Tocca{' '}
+                        <Text style={{ fontWeight: '700' }}>"Connetti"</Text>.
+                      </Text>
+                    </View>
                   )}
                 </View>
 
@@ -471,9 +510,17 @@ export default function ImpostazioniScreen() {
                   <Text style={[typography.h4, { color: colors.danger }]}>Setup fallito</Text>
                 </View>
                 <Text style={styles.rowSub}>{setupError}</Text>
-                <Text style={[styles.rowSub, { color: colors.accent }]}>
-                  Assicurati che la camera sia accesa, vicina e che la password WiFi sia corretta.
-                </Text>
+
+                {/* Bottone apri impostazioni — utile per abilitare Location o permessi */}
+                <TouchableOpacity
+                  style={[styles.saveBtn, { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: colors.border }]}
+                  onPress={() => Linking.openSettings()}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="settings" size={16} color={colors.text} />
+                  <Text style={[styles.saveBtnText, { color: colors.text }]}>Apri Impostazioni telefono</Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   style={[styles.saveBtn, { backgroundColor: colors.danger }]}
                   onPress={() => setSetupStep('idle')}

@@ -136,6 +136,17 @@ export async function getCameraNetworkInfo(): Promise<string> {
   return ThetaWifiModule.getNetworkInfo();
 }
 
+/**
+ * Verifica che il servizio Posizione (GPS) sia attivo a livello di sistema Android.
+ * WifiNetworkSpecifier richiede Location attivo — anche con il permesso concesso,
+ * se il toggle GPS è spento la connessione fallisce immediatamente.
+ * Su iOS / Android < 10 restituisce sempre true (non necessario).
+ */
+export async function isLocationServicesEnabled(): Promise<boolean> {
+  if (!isAndroid10Plus || !ThetaWifiModule) return true;
+  return ThetaWifiModule.isLocationEnabled();
+}
+
 export async function stopNativeLivePreview(): Promise<void> {
   if (!isAndroid10Plus || !ThetaWifiModule) return;
   await ThetaWifiModule.stopLivePreview();
