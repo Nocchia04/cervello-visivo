@@ -25,6 +25,7 @@ export const GET_CANTIERI = gql`
         id
         nome
         livello
+        fileUrl
       }
     }
   }

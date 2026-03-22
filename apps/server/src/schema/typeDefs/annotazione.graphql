@@ -19,6 +19,7 @@ extend type Mutation {
     x: Float!
     y: Float!
   ): Annotazione!
+  eliminaAnnotazione(id: ID!): Annotazione!
 }
 
 type Subscription {

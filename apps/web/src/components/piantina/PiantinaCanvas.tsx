@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useCallback, useState, useEffect } from "react";
-import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { useRouter } from "next/navigation";
+import { Pencil, Check } from "lucide-react";
 import PuntoDiScattoMarker from "./PuntoDiScattoMarker";
 
 interface Foto {
@@ -46,11 +46,22 @@ export default function PiantinaCanvas({
   const isPanningRef = useRef(false);
   const lastPanRef = useRef({ x: 0, y: 0 });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    })
-  );
+  // Edit mode
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Drag tracking
+  const dragRef = useRef<{
+    puntoId: string;
+    startClientX: number;
+    startClientY: number;
+    origX: number;
+    origY: number;
+    currentX: number;
+    currentY: number;
+    moved: boolean;
+  } | null>(null);
+  const [draggingPuntoId, setDraggingPuntoId] = useState<string | null>(null);
+  const [livePositions, setLivePositions] = useState<Record<string, { x: number; y: number }>>({});
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -74,32 +85,66 @@ export default function PiantinaCanvas({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isPanningRef.current) return;
-    const dx = e.clientX - lastPanRef.current.x;
-    const dy = e.clientY - lastPanRef.current.y;
-    setOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
-    lastPanRef.current = { x: e.clientX, y: e.clientY };
+    if (isPanningRef.current) {
+      const dx = e.clientX - lastPanRef.current.x;
+      const dy = e.clientY - lastPanRef.current.y;
+      setOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastPanRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    if (dragRef.current) {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const dxClient = e.clientX - dragRef.current.startClientX;
+      const dyClient = e.clientY - dragRef.current.startClientY;
+      const newX = Math.max(0, Math.min(100, dragRef.current.origX + (dxClient / (rect.width * scale)) * 100));
+      const newY = Math.max(0, Math.min(100, dragRef.current.origY + (dyClient / (rect.height * scale)) * 100));
+      dragRef.current.currentX = newX;
+      dragRef.current.currentY = newY;
+      dragRef.current.moved = true;
+      const puntoId = dragRef.current.puntoId;
+      setLivePositions((prev) => ({ ...prev, [puntoId]: { x: newX, y: newY } }));
+    }
   };
 
   const handleMouseUp = () => {
     isPanningRef.current = false;
+
+    if (dragRef.current?.moved) {
+      const { puntoId, currentX, currentY } = dragRef.current;
+      onPuntoDragEnd(puntoId, currentX, currentY);
+      setLivePositions((prev) => {
+        const next = { ...prev };
+        delete next[puntoId];
+        return next;
+      });
+    }
+    dragRef.current = null;
+    setDraggingPuntoId(null);
   };
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, delta } = event;
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const deltaXPercent = (delta.x / (rect.width * scale)) * 100;
-      const deltaYPercent = (delta.y / (rect.height * scale)) * 100;
-      const punto = puntiDiScatto.find((p) => p.id === active.id);
+  const handleMarkerMouseDown = useCallback(
+    (puntoId: string, e: React.MouseEvent) => {
+      if (!isEditMode || e.altKey) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const punto = puntiDiScatto.find((p) => p.id === puntoId);
       if (!punto) return;
-      const newX = Math.max(0, Math.min(100, punto.x + deltaXPercent));
-      const newY = Math.max(0, Math.min(100, punto.y + deltaYPercent));
-      onPuntoDragEnd(active.id as string, newX, newY);
+      dragRef.current = {
+        puntoId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        origX: punto.x,
+        origY: punto.y,
+        currentX: punto.x,
+        currentY: punto.y,
+        moved: false,
+      };
+      setDraggingPuntoId(puntoId);
     },
-    [puntiDiScatto, onPuntoDragEnd, scale]
+    [isEditMode, puntiDiScatto]
   );
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -139,44 +184,79 @@ export default function PiantinaCanvas({
           onClick={handleCanvasClick}
         />
 
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          {puntiDiScatto.map((punto) => (
+        {puntiDiScatto.map((punto, index) => {
+          const live = livePositions[punto.id];
+          return (
             <PuntoDiScattoMarker
               key={punto.id}
               id={punto.id}
               nome={punto.nome}
-              x={punto.x}
-              y={punto.y}
+              x={live?.x ?? punto.x}
+              y={live?.y ?? punto.y}
+              number={index + 1}
               fotoCount={punto.foto360.length}
               isSelected={selectedPuntoId === punto.id}
-              onClick={() => onPuntoClick ? onPuntoClick(punto.id) : router.push(`/dashboard/punti/${punto.id}`)}
+              editMode={isEditMode}
+              isDragging={draggingPuntoId === punto.id}
+              onClick={() =>
+                onPuntoClick ? onPuntoClick(punto.id) : router.push(`/dashboard/punti/${punto.id}`)
+              }
+              onMarkerMouseDown={(e) => handleMarkerMouseDown(punto.id, e)}
             />
-          ))}
-        </DndContext>
+          );
+        })}
+      </div>
+
+      {/* Edit mode toggle */}
+      <div className="absolute top-3 left-3">
+        <button
+          onClick={() => setIsEditMode((prev) => !prev)}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+          style={
+            isEditMode
+              ? { background: "#6366f1", color: "#fff", boxShadow: "0 2px 8px rgba(99,102,241,0.4)" }
+              : { background: "rgba(0,0,0,0.6)", color: "#fff" }
+          }
+          title={isEditMode ? "Termina modifica posizioni" : "Modifica posizione punti"}
+        >
+          {isEditMode ? (
+            <Check className="w-3.5 h-3.5" />
+          ) : (
+            <Pencil className="w-3.5 h-3.5" />
+          )}
+          {isEditMode ? "Fine" : "Modifica"}
+        </button>
       </div>
 
       {/* Zoom controls */}
-      <div
-        className="absolute bottom-3 right-3 flex flex-col gap-1"
-      >
+      <div className="absolute bottom-3 right-3 flex flex-col gap-1">
         <button
           onClick={() => setScale((s) => Math.min(5, s * 1.2))}
           className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-colors"
           style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
           title="Zoom in"
-        >+</button>
+        >
+          +
+        </button>
         <button
-          onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }}
+          onClick={() => {
+            setScale(1);
+            setOffset({ x: 0, y: 0 });
+          }}
           className="w-8 h-8 rounded-lg flex items-center justify-center text-xs transition-colors"
           style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
           title="Reset"
-        >&#8634;</button>
+        >
+          &#8634;
+        </button>
         <button
           onClick={() => setScale((s) => Math.max(0.3, s / 1.2))}
           className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-colors"
           style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
           title="Zoom out"
-        >&minus;</button>
+        >
+          &minus;
+        </button>
       </div>
     </div>
   );

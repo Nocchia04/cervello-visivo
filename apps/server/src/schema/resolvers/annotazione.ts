@@ -27,6 +27,30 @@ export const annotazioneResolvers = {
   },
 
   Mutation: {
+    eliminaAnnotazione: async (
+      _parent: unknown,
+      args: { id: string },
+      ctx: GraphQLContext
+    ) => {
+      const user = requireAuth(ctx);
+      if (user.role !== "ADMIN") {
+        throw new GraphQLError("Solo gli admin possono eliminare le annotazioni", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+      const annotazione = await ctx.prisma.annotazione.findUnique({
+        where: { id: args.id },
+        include: { autore: true },
+      });
+      if (!annotazione) {
+        throw new GraphQLError("Annotazione non trovata", {
+          extensions: { code: "NOT_FOUND" },
+        });
+      }
+      await ctx.prisma.annotazione.delete({ where: { id: args.id } });
+      return annotazione;
+    },
+
     creaAnnotazione: async (
       _parent: unknown,
       args: { foto360Id: string; testo: string; x: number; y: number },

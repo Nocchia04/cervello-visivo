@@ -11,6 +11,7 @@ import { ARCHIVIA_CANTIERE, RIATTIVA_CANTIERE } from "@/graphql/mutations";
 
 interface Piantina {
   id: string;
+  fileUrl: string;
 }
 
 interface Cantiere {
@@ -86,15 +87,18 @@ function CantiereCard({
         className="relative h-40 flex items-center justify-center"
         style={{ background: "var(--surface-hover)" }}
       >
-        {cantiere.thumbnailUrl ? (
-          <img
-            src={cantiere.thumbnailUrl}
-            alt={cantiere.nome}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <Camera className="w-10 h-10" style={{ color: "var(--border-strong)" }} />
-        )}
+        {(() => {
+          const previewUrl = cantiere.thumbnailUrl ?? cantiere.piantine[0]?.fileUrl ?? null;
+          return previewUrl ? (
+            <img
+              src={previewUrl}
+              alt={cantiere.nome}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <Camera className="w-10 h-10" style={{ color: "var(--border-strong)" }} />
+          );
+        })()}
         {/* Badge */}
         <div className="absolute top-3 right-3">
           {isAttivo ? (

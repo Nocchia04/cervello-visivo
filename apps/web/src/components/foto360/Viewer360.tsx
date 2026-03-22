@@ -282,10 +282,10 @@ export default function Viewer360({
     const dx = e.clientX - lastMouseRef.current.x;
     const dy = e.clientY - lastMouseRef.current.y;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMovedRef.current = true;
-    lonRef.current -= dx * 0.3;
+    lonRef.current += dx * 0.3;
     latRef.current = Math.max(
       -85,
-      Math.min(85, latRef.current + dy * 0.3)
+      Math.min(85, latRef.current - dy * 0.3)
     );
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
   };

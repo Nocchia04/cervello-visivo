@@ -407,7 +407,7 @@ export default function PiantinaPage() {
             className="text-xs mt-2 text-center"
             style={{ color: "var(--text-muted)" }}
           >
-            Scroll per zoom · Alt+drag per pan · Trascina i marker per spostarli
+            Scroll per zoom · Alt+drag per pan · Usa "Modifica" per spostare i marker
           </p>
         </div>
 

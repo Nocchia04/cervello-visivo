@@ -181,6 +181,15 @@ export const CREA_ANNOTAZIONE = gql`
   }
 `;
 
+export const ELIMINA_ANNOTAZIONE = gql`
+  mutation EliminaAnnotazione($id: ID!) {
+    eliminaAnnotazione(id: $id) {
+      id
+      foto360Id
+    }
+  }
+`;
+
 export const CREA_OPERATORE = gql`
   mutation CreaOperatore(
     $email: String!
