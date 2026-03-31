@@ -3,7 +3,11 @@
  *
  * Android (10+): usa WifiNetworkSpecifier per connettere al WiFi camera
  * senza perdere i dati mobili. Tutte le richieste HTTP alla camera
- * passano dall'OkHttpClient legato alla rete camera.
+ * usano network.openConnection() — nessun bindProcessToNetwork necessario.
+ *
+ * Live preview MJPEG: implementato nativamente in ThetaWifiModule.kt.
+ * startMjpegPreview() apre lo stream OSC camera.getLivePreview e
+ * emette eventi THETA_FRAME_EVENT con {data: "data:image/jpeg;base64,..."}
  *
  * iOS / Android < 10: fallback a fetch normale. iOS gestisce
  * il dual-stack WiFi+cellulare automaticamente.
@@ -18,31 +22,68 @@ import {
 
 const { ThetaWifiModule } = NativeModules;
 
-// Emitter per gli eventi nativi (live preview frame, WiFi lost)
+// Emitter per gli eventi nativi (WiFi lost)
 export const thetaWifiEmitter = ThetaWifiModule
   ? new NativeEventEmitter(ThetaWifiModule)
   : null;
 
-export const THETA_FRAME_EVENT = "ThetaLiveFrame";
-export const THETA_PREVIEW_ERROR_EVENT = "ThetaPreviewError";
 export const THETA_WIFI_LOST_EVENT = "ThetaWifiLost";
+
+/**
+ * Evento emesso da ThetaPreviewView (nativo) in caso di errore dello stream.
+ * RicohPreview.tsx lo ascolta via thetaWifiEmitter per mostrare l'errore in UI.
+ * I frame NON passano dal bridge — vengono renderizzati nativamente su SurfaceView.
+ */
+export const THETA_PREVIEW_ERROR_EVENT = "ThetaPreviewError";
 
 const isAndroid10Plus =
   Platform.OS === "android" && (Platform.Version as number) >= 29;
 
+// Android 13+ (API 33+): usa NEARBY_WIFI_DEVICES invece di ACCESS_FINE_LOCATION.
+// Con neverForLocation, WifiNetworkSpecifier non richiede Location attiva.
+const isAndroid13Plus =
+  Platform.OS === "android" && (Platform.Version as number) >= 33;
+
 /**
- * Richiede ACCESS_FINE_LOCATION a runtime (Android 10+).
- * Mostra il dialog nativo di Android: "Consenti una volta" /
- * "Consenti solo mentre usi l'app" / "Non consentire".
+ * Richiede il permesso WiFi a runtime.
+ * Android 13+ → NEARBY_WIFI_DEVICES (neverForLocation, non serve GPS attivo).
+ * Android 10–12 → ACCESS_FINE_LOCATION (richiede Location di sistema attiva).
  */
 async function requestWifiPermission(): Promise<void> {
-  const result = await PermissionsAndroid.request(
-    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-  );
-  if (result !== PermissionsAndroid.RESULTS.GRANTED) {
-    throw new Error(
-      "Permesso posizione negato. Necessario per connettersi al WiFi della camera."
+  if (!isAndroid10Plus) return;
+
+  if (isAndroid13Plus) {
+    // Android 13+: NEARBY_WIFI_DEVICES — non richiede Location di sistema
+    const result = await PermissionsAndroid.request(
+      "android.permission.NEARBY_WIFI_DEVICES" as any,
+      {
+        title: "Permesso dispositivi nelle vicinanze",
+        message:
+          "Necessario per connettersi al WiFi della camera RICOH THETA senza perdere la connessione internet.",
+        buttonPositive: "Consenti",
+        buttonNegative: "Nega",
+      }
     );
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+      throw new Error("NEARBY_WIFI_DENIED");
+    }
+  } else {
+    // Android 10–12: ACCESS_FINE_LOCATION
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: "Permesso posizione",
+        message:
+          "Necessario per connettersi al WiFi della camera mantenendo i dati mobili attivi.",
+        buttonPositive: "Consenti",
+        buttonNegative: "Nega",
+      }
+    );
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+      throw new Error(
+        "Permesso posizione negato. Necessario per connettersi al WiFi della camera."
+      );
+    }
   }
 }
 
@@ -95,21 +136,6 @@ export async function cameraFetch(
 }
 
 /**
- * Avvia lo stream MJPEG live preview.
- * Su Android 10+: gestito nativamente (il parser è in Kotlin).
- * Altrove: usa theta-client-react-native.
- */
-export async function startNativeLivePreview(
-  baseUrl: string
-): Promise<boolean> {
-  if (!isAndroid10Plus || !ThetaWifiModule) return false;
-  await ThetaWifiModule.startLivePreview(
-    `${baseUrl}/osc/commands/execute`
-  );
-  return true;
-}
-
-/**
  * Scarica un file binario dalla camera via la rete WiFi camera (Android 10+).
  * Usa network.openConnection() nel modulo nativo — non richiede bindProcessToNetwork.
  * @param url       URL del file sulla camera (es. http://192.168.1.1/files/...)
@@ -128,8 +154,27 @@ export async function downloadFileViaCameraNetwork(
 }
 
 /**
+ * Lega tutti gli HTTP del processo alla rete WiFi camera.
+ * Necessario affinché theta-client-react-native raggiunga 192.168.1.1
+ * tramite il suo OkHttp standard (senza network.openConnection).
+ * Da chiamare prima di initialize() e getLivePreview().
+ */
+export async function bindToCameraNetwork(): Promise<void> {
+  if (!isAndroid10Plus || !ThetaWifiModule) return;
+  await ThetaWifiModule.bindToCameraNetwork();
+}
+
+/**
+ * Ripristina il routing di default (dati mobili / rete predefinita).
+ * Da chiamare dopo stopLivePreview() per riabilitare internet.
+ */
+export async function unbindFromCameraNetwork(): Promise<void> {
+  if (!isAndroid10Plus || !ThetaWifiModule) return;
+  await ThetaWifiModule.unbindFromCameraNetwork();
+}
+
+/**
  * Diagnostica: restituisce info sulla rete camera (interface, IP, routes).
- * Utile per debug del routing.
  */
 export async function getCameraNetworkInfo(): Promise<string> {
   if (!isAndroid10Plus || !ThetaWifiModule) return "Non supportato su questa piattaforma";
@@ -138,34 +183,14 @@ export async function getCameraNetworkInfo(): Promise<string> {
 
 /**
  * Verifica che il servizio Posizione (GPS) sia attivo a livello di sistema Android.
- * WifiNetworkSpecifier richiede Location attivo — anche con il permesso concesso,
- * se il toggle GPS è spento la connessione fallisce immediatamente.
- * Su iOS / Android < 10 restituisce sempre true (non necessario).
+ * Necessario SOLO su Android 10–12 (dove si usa ACCESS_FINE_LOCATION).
+ * Su Android 13+ si usa NEARBY_WIFI_DEVICES neverForLocation → Location non richiesta.
+ * Su iOS / Android < 10 restituisce sempre true.
  */
 export async function isLocationServicesEnabled(): Promise<boolean> {
+  if (isAndroid13Plus) return true; // NEARBY_WIFI_DEVICES non richiede Location
   if (!isAndroid10Plus || !ThetaWifiModule) return true;
   return ThetaWifiModule.isLocationEnabled();
-}
-
-export async function stopNativeLivePreview(): Promise<void> {
-  if (!isAndroid10Plus || !ThetaWifiModule) return;
-  await ThetaWifiModule.stopLivePreview();
-}
-
-export function onFrame(
-  callback: (dataUrl: string) => void
-): EmitterSubscription | null {
-  return (
-    thetaWifiEmitter?.addListener(THETA_FRAME_EVENT, callback) ?? null
-  );
-}
-
-export function onPreviewError(
-  callback: (message: string) => void
-): EmitterSubscription | null {
-  return (
-    thetaWifiEmitter?.addListener(THETA_PREVIEW_ERROR_EVENT, callback) ?? null
-  );
 }
 
 export function onWifiLost(
@@ -175,3 +200,4 @@ export function onWifiLost(
     thetaWifiEmitter?.addListener(THETA_WIFI_LOST_EVENT, callback) ?? null
   );
 }
+

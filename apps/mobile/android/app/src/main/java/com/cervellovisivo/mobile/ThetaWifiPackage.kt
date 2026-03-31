@@ -10,5 +10,5 @@ class ThetaWifiPackage : ReactPackage {
         listOf(ThetaWifiModule(reactContext))
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
-        emptyList()
+        listOf(ThetaPreviewViewManager())
 }

@@ -7,11 +7,10 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
-import android.util.Base64
 import com.facebook.react.bridge.*
+import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -21,24 +20,30 @@ import java.net.URL
  * ThetaWifiModule — Connette al WiFi della RICOH THETA SC2 su Android 10+
  * senza perdere i dati mobili (WifiNetworkSpecifier).
  *
- * ROUTING: bindProcessToNetwork() è l'unica API che su tutti i dispositivi
- * garantisce che il socket TCP venga aperto sulla rete camera.
- * Viene attivato solo per il tempo necessario ad aprire la connessione
- * (< 200ms su rete locale), poi ripristinato subito al network di default
- * così internet continua a funzionare.
+ * Tutte le chiamate HTTP verso la camera (OSC API, download) usano
+ * network.openConnection(URL(...)) — nessun bindProcessToNetwork necessario.
+ *
+ * Live preview MJPEG: gestito nativamente da ThetaPreviewView (SurfaceView).
+ * Nessun frame passa dal bridge RN.
  */
+@ReactModule(name = ThetaWifiModule.NAME)
 class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
     private var cameraNetwork: Network? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var previewThread: Thread? = null
-    private var previewConn: HttpURLConnection? = null
 
-    override fun getName(): String = "ThetaWifiModule"
+    companion object {
+        const val NAME = "ThetaWifiModule"
+    }
+
+    override fun getName(): String = NAME
 
     private val connectivityManager: ConnectivityManager
         get() = reactContext.getSystemService(ConnectivityManager::class.java)
+
+    /** Espone la rete camera a ThetaPreviewViewManager (Kotlin-only, non @ReactMethod). */
+    fun getCameraNetwork(): Network? = cameraNetwork
 
     // ── Connessione al WiFi camera ──────────────────────────────────────────
 
@@ -95,8 +100,22 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun disconnectFromCamera(promise: Promise) {
-        stopPreviewInternal()
+        connectivityManager.bindProcessToNetwork(null)
         releaseNetwork()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun bindToCameraNetwork(promise: Promise) {
+        val network = cameraNetwork
+            ?: return promise.reject("NOT_CONNECTED", "Non connesso al WiFi della camera")
+        connectivityManager.bindProcessToNetwork(network)
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun unbindFromCameraNetwork(promise: Promise) {
+        connectivityManager.bindProcessToNetwork(null)
         promise.resolve(null)
     }
 
@@ -105,12 +124,6 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
         promise.resolve(cameraNetwork != null)
     }
 
-    /**
-     * Verifica che il servizio di Posizione (GPS) sia attivo a livello di sistema.
-     * Necessario per WifiNetworkSpecifier su Android 10+: anche con il permesso
-     * ACCESS_FINE_LOCATION concesso, se Location è spento la connessione fallisce
-     * immediatamente con onUnavailable().
-     */
     @ReactMethod
     fun isLocationEnabled(promise: Promise) {
         val locationManager = reactContext.getSystemService(LocationManager::class.java)
@@ -124,10 +137,6 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
     }
 
     // ── HTTP Request ─────────────────────────────────────────────────────────
-    //
-    // Usa network.openConnection(URL) che lega il socket direttamente alla rete
-    // camera senza toccare il routing di processo.
-    // Internet del telefono rimane su dati mobili per tutta la durata.
 
     @ReactMethod
     fun makeRequest(url: String, method: String, body: String?, promise: Promise) {
@@ -173,9 +182,6 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
     }
 
     // ── File Download via camera network ─────────────────────────────────────
-    //
-    // Usa network.openConnection() che lega il socket alla rete camera.
-    // Legge il body come byte stream e scrive sul filesystem locale.
 
     @ReactMethod
     fun downloadFileToCameraNetwork(url: String, destPath: String, promise: Promise) {
@@ -228,7 +234,6 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
         val addrs  = link?.linkAddresses?.joinToString { "${it.address.hostAddress}/${it.prefixLength}" }
         val routes = link?.routes?.joinToString { "${it.destination} → ${it.gateway?.hostAddress}" }
 
-        // Controlla se l'interfaccia ha un'IPv4 reale
         val netIf   = if (ifName != null) NetworkInterface.getByName(ifName) else null
         val ipv4    = netIf?.inetAddresses?.toList()?.filterIsInstance<Inet4Address>()?.firstOrNull()?.hostAddress
 
@@ -243,114 +248,7 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
         promise.resolve(info)
     }
 
-    // ── Live Preview (MJPEG stream) ───────────────────────────────────────────
-
-    @ReactMethod
-    fun startLivePreview(executeUrl: String, promise: Promise) {
-        val network = cameraNetwork
-            ?: return promise.reject("NOT_CONNECTED", "Non connesso al WiFi della camera")
-
-        stopPreviewInternal()
-
-        previewThread = Thread {
-            var conn: HttpURLConnection? = null
-            try {
-                conn = network.openConnection(URL(executeUrl)) as HttpURLConnection
-                previewConn = conn
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 15_000
-                conn.readTimeout   = 0 // stream infinito
-                conn.doOutput = true
-                conn.instanceFollowRedirects = false
-                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.outputStream.use {
-                    it.write("""{"name":"camera.getLivePreview"}""".toByteArray(Charsets.UTF_8))
-                }
-
-                val code = conn.responseCode
-                if (code != 200) {
-                    promise.reject("PREVIEW_ERROR", "Stream HTTP $code")
-                    return@Thread
-                }
-
-                promise.resolve(null)
-
-                val inputStream: InputStream = conn!!.inputStream
-                parseMjpegStream(inputStream)
-
-            } catch (e: Exception) {
-                if (!Thread.interrupted()) {
-                    sendEvent("ThetaPreviewError", e.message ?: "Errore stream")
-                }
-            } finally {
-                conn?.disconnect()
-                previewConn = null
-            }
-        }
-        previewThread!!.start()
-    }
-
-    @ReactMethod
-    fun stopLivePreview(promise: Promise) {
-        stopPreviewInternal()
-        promise.resolve(null)
-    }
-
     // ── Internals ─────────────────────────────────────────────────────────────
-
-    private fun parseMjpegStream(inputStream: InputStream) {
-        val chunkSize = 65_536
-        val buffer = ByteArray(chunkSize)
-        val frameBuffer = ArrayList<Byte>(100_000)
-        var inJpeg = false
-
-        while (!Thread.currentThread().isInterrupted) {
-            val bytesRead = inputStream.read(buffer)
-            if (bytesRead < 0) break
-
-            for (i in 0 until bytesRead) {
-                val b = buffer[i]
-
-                if (!inJpeg) {
-                    frameBuffer.add(b)
-                    val sz = frameBuffer.size
-                    if (sz >= 2 &&
-                        frameBuffer[sz - 2] == 0xFF.toByte() &&
-                        frameBuffer[sz - 1] == 0xD8.toByte()
-                    ) {
-                        inJpeg = true
-                        frameBuffer.clear()
-                        frameBuffer.add(0xFF.toByte())
-                        frameBuffer.add(0xD8.toByte())
-                    }
-                    if (frameBuffer.size > 8192) frameBuffer.clear()
-                } else {
-                    frameBuffer.add(b)
-                    val sz = frameBuffer.size
-                    if (sz >= 2 &&
-                        frameBuffer[sz - 2] == 0xFF.toByte() &&
-                        b == 0xD9.toByte()
-                    ) {
-                        val b64 = Base64.encodeToString(frameBuffer.toByteArray(), Base64.NO_WRAP)
-                        sendEvent("ThetaLiveFrame", "data:image/jpeg;base64,$b64")
-                        frameBuffer.clear()
-                        inJpeg = false
-                    }
-                    if (frameBuffer.size > 2_000_000) {
-                        frameBuffer.clear()
-                        inJpeg = false
-                    }
-                }
-            }
-        }
-    }
-
-    private fun stopPreviewInternal() {
-        previewThread?.interrupt()
-        previewThread = null
-        try { previewConn?.disconnect() } catch (_: Exception) {}
-        previewConn = null
-    }
 
     private fun releaseNetwork() {
         networkCallback?.let {
@@ -366,12 +264,12 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
             .emit(eventName, data)
     }
 
-    @ReactMethod fun addListener(eventName: String) { /* no-op */ }
+    @ReactMethod fun addListener(eventName: String?) { /* no-op */ }
     @ReactMethod fun removeListeners(count: Double) { /* no-op */ }
 
     override fun onCatalystInstanceDestroy() {
         super.onCatalystInstanceDestroy()
-        stopPreviewInternal()
+        connectivityManager.bindProcessToNetwork(null)
         releaseNetwork()
     }
 }

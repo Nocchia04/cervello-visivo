@@ -5,13 +5,18 @@
   <!-- BLE: Android 12+ -->
   <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
   <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+  <!-- WiFi: Android 13+ — WifiNetworkSpecifier senza richiedere Location attiva -->
+  <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+      android:usesPermissionFlags="neverForLocation"
+      android:minSdkVersion="33"/>
+  <!-- WiFi: Android 10–12 — WifiNetworkSpecifier richiede Location -->
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
   <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
   <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
   <uses-permission android:name="android.permission.INTERNET"/>
-  <!-- Necessario per WifiNetworkSpecifier (connessione WiFi camera senza perdere dati mobili) -->
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>

@@ -19,7 +19,7 @@ import * as FileSystem from "expo-file-system";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ricohClient } from "../../src/services/ricoh/RicohClient";
-import { connectToCamera, disconnectFromCamera } from "../../src/services/ricoh/ThetaWifi";
+import { connectToCamera, isCameraWifiConnected, unbindFromCameraNetwork } from "../../src/services/ricoh/ThetaWifi";
 import {
   scanAndConnect,
   connectByPeripheralId,
@@ -48,6 +48,8 @@ export default function ScattoScreen() {
 
   const insets = useSafeAreaInsets();
   const previewRef = useRef<RicohPreviewHandle>(null);
+
+  const [cameraCredentials, setCameraCredentials] = useState<{ ssid: string | null; password: string | null }>({ ssid: null, password: null });
 
   const [bleStatus, setBleStatus] = useState<BleStatus>("idle");
   const [bleStatusMsg, setBleStatusMsg] = useState("");
@@ -88,6 +90,11 @@ export default function ScattoScreen() {
   // Auto-connette BLE all'apertura della schermata
   useEffect(() => {
     let cancelled = false;
+
+    // Carica le credenziali WiFi camera per passarle al preview
+    getCameraCredentials().then(({ ssid, password }) => {
+      if (!cancelled) setCameraCredentials({ ssid: ssid ?? null, password: password ?? null });
+    }).catch(() => {});
 
     async function autoConnect() {
       // Se già connessa (es. si torna allo screen senza aver chiuso l'app), non riscannare
@@ -141,8 +148,10 @@ export default function ScattoScreen() {
     return () => {
       cancelled = true;
       // Non disconnettere BLE: _device è singleton, rimane connesso tra schermate.
-      // Disconnetti solo il WiFi camera se aperto (download in corso).
-      disconnectFromCamera().catch(() => {});
+      // Teardown completo del preview: stopLivePreview + unbind + disconnetti WiFi.
+      previewRef.current?.cleanup().catch(() => {});
+      // Unbind di sicurezza: se cleanup viene chiamato mentre il bind è ancora attivo
+      unbindFromCameraNetwork().catch(() => {});
     };
   }, []);
 
@@ -191,10 +200,14 @@ export default function ScattoScreen() {
       await takePictureViaBle();
       setTakingStep("Scatto completato. Download foto...");
 
-      // ── 2. Connetti WiFi per scaricare il file ────────────────────────────
+      // ── 2. Connetti WiFi solo se non già connesso ─────────────────────────
+      // stopStream() mantiene il WiFi attivo: spesso non serve riconnettersi.
       if (isAndroid10) {
-        const { ssid, password } = await getCameraCredentials();
-        if (ssid) await connectToCamera(ssid, password ?? "");
+        const alreadyConnected = await isCameraWifiConnected();
+        if (!alreadyConnected) {
+          const { ssid, password } = await getCameraCredentials();
+          if (ssid) await connectToCamera(ssid, password ?? "");
+        }
       }
 
       // ── 3. Trova il file più recente e scaricalo ──────────────────────────
@@ -203,8 +216,7 @@ export default function ScattoScreen() {
       if (!latest?.fileUrl) throw new Error("Nessun file trovato sulla camera");
       const localUri = await ricohClient.downloadFile(latest.fileUrl);
 
-      // ── 4. Disconnetti WiFi (BLE rimane attivo) ───────────────────────────
-      if (isAndroid10) disconnectFromCamera().catch(() => {});
+      // ── 4. WiFi rimane connesso — il preview lo riusa al prossimo startStream ──
 
       setTakingStep("");
       const queueItemId = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -312,7 +324,7 @@ export default function ScattoScreen() {
 
   return (
     <>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}>
         <Stack.Screen
           options={{
             title: "Scatto 360°",
@@ -396,7 +408,12 @@ export default function ScattoScreen() {
         {bleStatus === "connected" && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Live Preview</Text>
-            <RicohPreview ref={previewRef} isConnected={bleStatus === "connected"} />
+            <RicohPreview
+              ref={previewRef}
+              isConnected={bleStatus === "connected"}
+              ssid={cameraCredentials.ssid}
+              password={cameraCredentials.password}
+            />
           </View>
         )}
 

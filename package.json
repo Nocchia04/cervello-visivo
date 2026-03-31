@@ -24,7 +24,8 @@
     "db:seed": "npm run seed -w packages/db",
     "db:studio": "npm run studio -w packages/db",
     "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
     "dotenv-cli": "^7.4.4"

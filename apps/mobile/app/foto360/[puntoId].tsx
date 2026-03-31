@@ -9,6 +9,7 @@ import {
   Image,
 } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useSubscription } from "@apollo/client";
 import { FOTO360_QUERY, ANNOTAZIONI_QUERY } from "../../src/graphql/queries";
 import { NUOVA_ANNOTAZIONE_SUBSCRIPTION } from "../../src/graphql/subscriptions";
@@ -39,6 +40,7 @@ export default function Foto360Screen() {
     puntoNome: string;
   }>();
 
+  const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnnotations, setShowAnnotations] = useState(false);
 
@@ -126,7 +128,7 @@ export default function Foto360Screen() {
 
       {/* Time travel bar */}
       {fotos.length > 1 && (
-        <View style={styles.timeTravelBar}>
+        <View style={[styles.timeTravelBar, { paddingBottom: insets.bottom + 8 }]}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}

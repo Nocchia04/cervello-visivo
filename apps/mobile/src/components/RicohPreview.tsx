@@ -1,10 +1,12 @@
 /**
- * RicohPreview — live preview MJPEG nativo della Ricoh Theta SC2.
+ * RicohPreview — live preview MJPEG della Ricoh Theta SC2.
  *
- * Android 10+: usa ThetaWifiModule (OkHttp legato alla rete camera,
- *   parser MJPEG in Kotlin, eventi ThetaLiveFrame via NativeEventEmitter).
- * iOS / Android < 10: live preview non disponibile nativamente.
- *   L'utente scatta e vede l'anteprima solo dopo il download.
+ * Architettura:
+ *   - ThetaPreviewNativeView (SurfaceView) renderizza i frame JPEG direttamente
+ *     tramite BitmapFactory + Canvas.drawBitmap() — zero base64, zero bridge.
+ *   - La prop `isStreaming` controlla start/stop del thread MJPEG nativo.
+ *   - `onFirstFrame` → nasconde il loading spinner al primo frame.
+ *   - `onPreviewError` → mostra errore + retry.
  */
 import React, {
   useState,
@@ -19,122 +21,136 @@ import {
   StyleSheet,
   Text,
   ActivityIndicator,
-  Image,
+  Platform,
+  TouchableOpacity,
 } from "react-native";
 import type { EmitterSubscription } from "react-native";
 import {
   thetaWifiEmitter,
-  THETA_FRAME_EVENT,
-  THETA_PREVIEW_ERROR_EVENT,
-  startNativeLivePreview,
-  stopNativeLivePreview,
+  THETA_WIFI_LOST_EVENT,
+  connectToCamera,
+  disconnectFromCamera,
+  isCameraWifiConnected,
 } from "../services/ricoh/ThetaWifi";
-import { RICOH_BASE_URL } from "../services/ricoh/constants";
+import ThetaPreviewNativeView from "./ThetaPreviewNativeView";
 import { colors, spacing, radius, typography } from "../lib/theme";
 
 export interface RicohPreviewHandle {
-  stopStream: () => void;
-  startStream: () => void;
+  /** Ferma il preview (WiFi rimane connesso). */
+  stopStream: () => Promise<void>;
+  /** Riavvia il preview. */
+  startStream: () => Promise<void>;
+  /** Teardown completo: stop + disconnetti WiFi. Da chiamare all'uscita. */
+  cleanup: () => Promise<void>;
 }
 
 interface RicohPreviewProps {
   isConnected: boolean;
+  ssid: string | null;
+  password: string | null;
 }
 
 const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
-  ({ isConnected }, ref) => {
-    const [frameUri, setFrameUri] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+  ({ isConnected, ssid, password }, ref) => {
     const [streaming, setStreaming] = useState(false);
-    const frameListenerRef = useRef<EmitterSubscription | null>(null);
-    const errorListenerRef = useRef<EmitterSubscription | null>(null);
+    const [firstFrame, setFirstFrame] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const wifiLostRef = useRef<EmitterSubscription | null>(null);
     const streamActiveRef = useRef(false);
+
+    const removeListeners = useCallback(() => {
+      wifiLostRef.current?.remove();
+      wifiLostRef.current = null;
+    }, []);
+
+    // ── stopStream ──────────────────────────────────────────────────────────
 
     const stopStream = useCallback(async () => {
       if (!streamActiveRef.current) return;
       streamActiveRef.current = false;
       setStreaming(false);
-      frameListenerRef.current?.remove();
-      frameListenerRef.current = null;
-      errorListenerRef.current?.remove();
-      errorListenerRef.current = null;
-      await stopNativeLivePreview();
-    }, []);
+      setFirstFrame(false);
+      removeListeners();
+    }, [removeListeners]);
+
+    // ── cleanup ─────────────────────────────────────────────────────────────
+
+    const cleanup = useCallback(async () => {
+      streamActiveRef.current = false;
+      setStreaming(false);
+      setFirstFrame(false);
+      removeListeners();
+      await disconnectFromCamera().catch(() => {});
+    }, [removeListeners]);
+
+    // ── startStream ─────────────────────────────────────────────────────────
 
     const startStream = useCallback(async () => {
       if (streamActiveRef.current) return;
+      if (!isConnected) return;
 
-      // Live preview richiede il modulo nativo (Android 10+)
-      if (!thetaWifiEmitter) {
+      if (Platform.OS !== "android" || (Platform.Version as number) < 29) {
         setError("Live preview disponibile solo su Android 10+");
         return;
       }
 
-      setFrameUri(null);
       setError(null);
-      setStreaming(true);
+      setFirstFrame(false);
 
-      // Registra listener PRIMA di avviare lo stream
-      frameListenerRef.current?.remove();
-      frameListenerRef.current = thetaWifiEmitter.addListener(
-        THETA_FRAME_EVENT,
-        (dataUrl: string) => {
-          if (dataUrl) setFrameUri(dataUrl);
-        }
-      );
-
-      errorListenerRef.current?.remove();
-      errorListenerRef.current = thetaWifiEmitter.addListener(
-        THETA_PREVIEW_ERROR_EVENT,
-        (message: string) => {
-          setError(message ?? "Errore stream");
-          setStreaming(false);
-          streamActiveRef.current = false;
-        }
-      );
-
-      try {
-        const started = await startNativeLivePreview(RICOH_BASE_URL);
-        if (!started) {
-          // Piattaforma non supportata (non dovrebbe succedere se thetaWifiEmitter != null)
-          setStreaming(false);
-          setError("Live preview non supportata su questo dispositivo");
-          frameListenerRef.current?.remove();
-          frameListenerRef.current = null;
-          errorListenerRef.current?.remove();
-          errorListenerRef.current = null;
+      if (ssid) {
+        try {
+          const alreadyConnected = await isCameraWifiConnected();
+          if (!alreadyConnected) {
+            await connectToCamera(ssid, password ?? "");
+          }
+        } catch {
+          setError(
+            "Camera non raggiungibile.\nAssicurati che sia accesa e vicina."
+          );
           return;
         }
-        streamActiveRef.current = true;
-      } catch (err) {
-        setStreaming(false);
-        setError(
-          err instanceof Error ? err.message : "Errore avvio stream"
-        );
-        frameListenerRef.current?.remove();
-        frameListenerRef.current = null;
-        errorListenerRef.current?.remove();
-        errorListenerRef.current = null;
       }
-    }, []);
 
-    useImperativeHandle(ref, () => ({ stopStream, startStream }), [
-      stopStream,
-      startStream,
-    ]);
+      removeListeners();
+
+      if (thetaWifiEmitter) {
+        wifiLostRef.current = thetaWifiEmitter.addListener(
+          THETA_WIFI_LOST_EVENT,
+          () => {
+            if (streamActiveRef.current) {
+              streamActiveRef.current = false;
+              setStreaming(false);
+              setFirstFrame(false);
+              setError("WiFi camera disconnesso.");
+              removeListeners();
+            }
+          }
+        );
+      }
+
+      streamActiveRef.current = true;
+      setStreaming(true);
+    }, [isConnected, ssid, password, removeListeners]);
+
+    useImperativeHandle(
+      ref,
+      () => ({ stopStream, startStream, cleanup }),
+      [stopStream, startStream, cleanup]
+    );
 
     useEffect(() => {
       if (isConnected) {
         startStream();
       } else {
         stopStream();
-        setFrameUri(null);
         setError(null);
       }
-      return () => {
-        stopStream();
-      };
-    }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+      return () => { cleanup(); };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isConnected]);
+
+    // ── Render ──────────────────────────────────────────────────────────────
 
     if (!isConnected) {
       return (
@@ -149,32 +165,52 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
 
     return (
       <View style={styles.container}>
-        {/* Frame dalla camera */}
-        {frameUri && (
-          <Image
-            source={{ uri: frameUri }}
-            style={styles.frame}
-            resizeMode="contain"
-          />
-        )}
+        {/* SurfaceView nativa — frame JPEG renderizzati direttamente su Canvas */}
+        <ThetaPreviewNativeView
+          isStreaming={streaming && !error}
+          style={styles.frame}
+          onFirstFrame={() => setFirstFrame(true)}
+          onPreviewError={() => {
+            if (streamActiveRef.current) {
+              streamActiveRef.current = false;
+              setStreaming(false);
+              setFirstFrame(false);
+              setError("Errore stream preview");
+              removeListeners();
+            }
+          }}
+        />
 
-        {/* Loading: nessun frame ancora */}
-        {streaming && !frameUri && !error && (
+        {/* Loading spinner — visibile finché non arriva il primo frame */}
+        {streaming && !firstFrame && !error && (
           <View style={styles.overlay} pointerEvents="none">
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.loadingText}>Avvio preview...</Text>
+            <Text style={styles.loadingText}>Connessione camera...</Text>
           </View>
         )}
 
-        {/* Errore */}
-        {error && (
-          <View style={styles.overlay} pointerEvents="none">
+        {/* Errore con retry */}
+        {!!error && (
+          <View style={styles.overlay}>
             <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity
+              onPress={() => {
+                streamActiveRef.current = false;
+                setStreaming(false);
+                setFirstFrame(false);
+                setError(null);
+                startStream();
+              }}
+              style={styles.retryButton}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.retryText}>Riprova</Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* Badge LIVE */}
-        {!!frameUri && (
+        {/* Badge LIVE — appare al primo frame */}
+        {streaming && firstFrame && !error && (
           <View style={styles.liveBadge} pointerEvents="none">
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
@@ -206,8 +242,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.7)",
-    gap: spacing.sm,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
   },
   placeholderIcon: {
     fontSize: 40,
@@ -227,7 +264,19 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.danger,
     textAlign: "center",
+  },
+  retryButton: {
+    marginTop: spacing.xs,
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  retryText: {
+    ...typography.label,
+    color: colors.white,
   },
   liveBadge: {
     position: "absolute",

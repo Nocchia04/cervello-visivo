@@ -67,6 +67,7 @@ export default function ImpostazioniScreen() {
   const [setupModalVisible, setSetupModalVisible] = useState(false);
 
   const isAndroid10 = Platform.OS === 'android' && (Platform.Version as number) >= 29;
+  const isAndroid13 = Platform.OS === 'android' && (Platform.Version as number) >= 33;
 
   useEffect(() => {
     getUserData<UserData>().then(setUser);
@@ -140,6 +141,7 @@ export default function ImpostazioniScreen() {
 
       // ── Step 1: WiFi ──
       setSetupStatusMsg(`Connessione WiFi a ${ssid}...\n\nATTENZIONE: apparirà un dialogo Android — tocca "Connetti" per procedere.`);
+      await connectToCamera(ssid, password);
       setSetupStatusMsg('WiFi connesso. Registro dispositivo BLE...');
 
       // ── Step 2: Registra BLE UUID via HTTP (usa rete camera, non fetch normale) ──
@@ -196,9 +198,11 @@ export default function ImpostazioniScreen() {
       // Messaggio user-friendly per i casi più comuni
       const msg = raw === 'LOCATION_DISABLED'
         ? 'Posizione (GPS) disattivata.\n\nAndroid richiede che la Posizione sia attiva per connettersi al WiFi della camera. Attivala in Impostazioni → Posizione e riprova.'
-        : raw.includes('WIFI_UNAVAILABLE') || raw.includes('Impossibile connettersi')
-          ? `${raw}\n\nSe hai visto un dialogo Android "Connetti a ${serial ? `THETA${serial}.OSC` : 'camera'}?" e non hai toccato "Connetti", riprova e tocca il dialogo entro 15 secondi.`
-          : raw;
+        : raw === 'NEARBY_WIFI_DENIED'
+          ? 'Permesso "Dispositivi nelle vicinanze" negato.\n\nNecessario su Android 13+ per connettersi al WiFi della camera senza disattivare internet.\n\nVai in Impostazioni → App → Autorizzazioni → Dispositivi nelle vicinanze e consenti.'
+          : raw.includes('WIFI_UNAVAILABLE') || raw.includes('Impossibile connettersi')
+            ? `Impossibile connettersi a ${serial ? `THETA${serial}.OSC` : 'camera'}.\n\nVerifica:\n• Camera accesa e vicina al telefono\n• Se è apparso un dialogo Android, tocca "Connetti" entro 15s\n• Su Xiaomi/Redmi: abbassa la barra notifiche e tocca "Connetti"`
+            : raw;
       setSetupError(msg);
       setSetupStep('error');
     }
@@ -251,7 +255,7 @@ export default function ImpostazioniScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
 
         {/* ── Header ── */}
         <View style={styles.header}>
@@ -411,19 +415,6 @@ export default function ImpostazioniScreen() {
                   <Feather name="wifi" size={14} color={colors.accent} />
                   <Text style={styles.infoText}>
                     Assicurati che la camera THETA sia accesa e vicina prima di procedere.
-                  </Text>
-                </View>
-
-                {/* Warning dialogo Android + Location */}
-                <View style={[styles.infoCard, { marginHorizontal: 0, backgroundColor: '#FEF3C7' }]}>
-                  <Feather name="alert-triangle" size={14} color="#D97706" />
-                  <Text style={[styles.infoText, { color: '#92400E' }]}>
-                    Durante la connessione Android mostrerà un dialogo —{' '}
-                    <Text style={{ fontWeight: '700' }}>tocca "Connetti"</Text> entro 15 secondi.{'\n\n'}
-                    Su Xiaomi/Redmi il dialogo appare nella barra notifiche in alto — abbassa la barra e tocca{' '}
-                    <Text style={{ fontWeight: '700' }}>"Connetti"</Text>.{'\n\n'}
-                    Assicurati che la{' '}
-                    <Text style={{ fontWeight: '700' }}>Posizione (GPS)</Text> sia attiva nelle impostazioni del telefono.
                   </Text>
                 </View>
 
