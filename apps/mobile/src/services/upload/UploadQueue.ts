@@ -4,7 +4,7 @@ import { STORAGE_KEYS, getAuthToken } from "../../lib/storage";
 import { apolloClient } from "../../lib/apollo-client";
 import { UPLOAD_FOTO360_MUTATION } from "../../graphql/mutations";
 
-const PROD_SERVER_URL = "https://api-holobuilder.aitalia-demo.it";
+const PROD_SERVER_URL = "https://holobuilder-api.aitalia-test.it";
 
 function getServerBaseUrl(): string {
   if (!__DEV__) return PROD_SERVER_URL;

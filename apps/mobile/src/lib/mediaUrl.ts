@@ -14,7 +14,7 @@ function getServerHost(): string {
   return metroHost ?? "localhost";
 }
 
-const PROD_SERVER = "https://api-holobuilder.aitalia-demo.it";
+const PROD_SERVER = "https://holobuilder-api.aitalia-test.it";
 
 /**
  * Riscrive gli URL salvati dal server (es. "http://localhost:4000/uploads/...")
