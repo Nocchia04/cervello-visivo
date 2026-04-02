@@ -20,6 +20,7 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ricohClient } from "../../src/services/ricoh/RicohClient";
 import { connectToCamera, isCameraWifiConnected, unbindFromCameraNetwork } from "../../src/services/ricoh/ThetaWifi";
+import { CAMERA_ERROR_MESSAGES } from "../../src/services/ricoh/constants";
 import {
   scanAndConnect,
   connectByPeripheralId,
@@ -38,6 +39,35 @@ import type { OscFileEntry } from "../../src/services/ricoh/types";
 
 type BleStatus = "idle" | "connecting" | "connected" | "error" | "no_setup";
 
+/**
+ * Logica comune per connettere la camera via BLE.
+ * Tenta prima la connessione diretta per peripheral ID (veloce),
+ * poi fallback a scan per nome (lenta ma affidabile).
+ * Ritorna il deviceName salvato; lancia errore in caso di fallimento.
+ * Lancia BleNoSetupError se il setup non è stato completato.
+ */
+class BleNoSetupError extends Error {
+  constructor() { super("BLE non configurato"); }
+}
+
+async function performBleConnect(): Promise<string> {
+  const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
+  if (!setupComplete || !uuid || !deviceName) {
+    throw new BleNoSetupError();
+  }
+  if (peripheralId) {
+    try {
+      await connectByPeripheralId(peripheralId, uuid);
+    } catch {
+      // Fallback: scan (più lento ma funziona dopo reset/sostituzione camera)
+      await scanAndConnect(deviceName, uuid);
+    }
+  } else {
+    await scanAndConnect(deviceName, uuid);
+  }
+  return deviceName;
+}
+
 export default function ScattoScreen() {
   const { puntoId, puntoNome, piantinaId, piantinaNome } = useLocalSearchParams<{
     puntoId: string;
@@ -53,6 +83,7 @@ export default function ScattoScreen() {
 
   const [bleStatus, setBleStatus] = useState<BleStatus>("idle");
   const [bleStatusMsg, setBleStatusMsg] = useState("");
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [takingStep, setTakingStep] = useState("");
   const [lastPhotoUri, setLastPhotoUri] = useState<string | null>(null);
@@ -99,7 +130,7 @@ export default function ScattoScreen() {
     async function autoConnect() {
       // Se già connessa (es. si torna allo screen senza aver chiuso l'app), non riscannare
       if (isBluetoothConnected()) {
-        const { deviceName, setupComplete } = await getThetaBleCredentials();
+        const { deviceName } = await getThetaBleCredentials();
         if (!cancelled) {
           setBleStatus("connected");
           setBleStatusMsg(deviceName ?? "RICOH THETA SC2");
@@ -108,28 +139,12 @@ export default function ScattoScreen() {
         return;
       }
 
-      setBleStatus("connecting");
-      setBleStatusMsg("Ricerca camera...");
+      if (!cancelled) {
+        setBleStatus("connecting");
+        setBleStatusMsg("Ricerca camera...");
+      }
       try {
-        const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
-        if (!setupComplete || !uuid || !deviceName) {
-          if (!cancelled) setBleStatus("no_setup");
-          return;
-        }
-        if (!cancelled) setBleStatusMsg(`Connessione BLE (${deviceName})...`);
-
-        if (peripheralId) {
-          // Connessione diretta — nessuna scansione, molto più veloce
-          try {
-            await connectByPeripheralId(peripheralId, uuid);
-          } catch {
-            // Fallback a scan se connessione diretta fallisce (es. camera riparata/sostituita)
-            await scanAndConnect(deviceName, uuid);
-          }
-        } else {
-          await scanAndConnect(deviceName, uuid);
-        }
-
+        const deviceName = await performBleConnect();
         if (!cancelled) {
           setBleStatus("connected");
           setBleStatusMsg(deviceName);
@@ -137,8 +152,12 @@ export default function ScattoScreen() {
         }
       } catch (err) {
         if (!cancelled) {
-          setBleStatus("error");
-          setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
+          if (err instanceof BleNoSetupError) {
+            setBleStatus("no_setup");
+          } else {
+            setBleStatus("error");
+            setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
+          }
         }
       }
     }
@@ -159,29 +178,17 @@ export default function ScattoScreen() {
     setBleStatus("connecting");
     setBleStatusMsg("Ricerca camera...");
     try {
-      const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
-      if (!setupComplete || !uuid || !deviceName) {
-        setBleStatus("no_setup");
-        return;
-      }
-      setBleStatusMsg(`Connessione BLE (${deviceName})...`);
-
-      if (peripheralId) {
-        try {
-          await connectByPeripheralId(peripheralId, uuid);
-        } catch {
-          await scanAndConnect(deviceName, uuid);
-        }
-      } else {
-        await scanAndConnect(deviceName, uuid);
-      }
-
+      const deviceName = await performBleConnect();
       setBleStatus("connected");
       setBleStatusMsg(deviceName);
       loadCameraFiles();
     } catch (err) {
-      setBleStatus("error");
-      setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
+      if (err instanceof BleNoSetupError) {
+        setBleStatus("no_setup");
+      } else {
+        setBleStatus("error");
+        setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
+      }
     }
   }, [loadCameraFiles]);
 
@@ -210,11 +217,27 @@ export default function ScattoScreen() {
         }
       }
 
-      // ── 3. Trova il file più recente e scaricalo ──────────────────────────
-      const files = await ricohClient.listFiles(1);
-      const latest = files.entries?.[0];
-      if (!latest?.fileUrl) throw new Error("Nessun file trovato sulla camera");
-      const localUri = await ricohClient.downloadFile(latest.fileUrl);
+      // ── 3. Leggi stato camera: _latestFileUrl + batteria + errori ────────
+      // getState() è più veloce di listFiles(1) e non ha il rischio di
+      // freeze thumbnail della SC2. Otteniamo battery level gratis.
+      setTakingStep("Lettura stato camera...");
+      const camState = await ricohClient.getState();
+      const fileUrl = camState.state._latestFileUrl;
+
+      // Aggiorna badge batteria
+      setBatteryLevel(Math.round(camState.state.batteryLevel * 100));
+
+      if (!fileUrl) {
+        // Prova a rilevare errori specifici dalla camera
+        const errorCode = camState.state._cameraError?.[0];
+        const errorMsg = errorCode
+          ? CAMERA_ERROR_MESSAGES[errorCode] ?? `Errore camera: ${errorCode}`
+          : "Nessun file trovato sulla camera — verifica che lo scatto sia andato a buon fine.";
+        throw new Error(errorMsg);
+      }
+
+      setTakingStep("Download foto...");
+      const localUri = await ricohClient.downloadFile(fileUrl);
 
       // ── 4. WiFi rimane connesso — il preview lo riusa al prossimo startStream ──
 
@@ -374,7 +397,8 @@ export default function ScattoScreen() {
               <View style={styles.connectedInfo}>
                 <Text style={styles.connectedModel}>RICOH THETA SC2</Text>
                 <Text style={styles.batteryText}>
-                  <Feather name="bluetooth" size={11} /> BLE · {bleStatusMsg}
+                  BLE · {bleStatusMsg}
+                  {batteryLevel !== null ? ` · Batteria ${batteryLevel}%` : ""}
                 </Text>
               </View>
               <Feather name="bluetooth" size={18} color={colors.success} />

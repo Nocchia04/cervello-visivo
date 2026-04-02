@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Upload, Columns2 } from "lucide-react";
+import { ArrowLeft, Upload, Columns2, Maximize2, Minimize2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { GET_FOTO360 } from "@/graphql/queries";
 import { UPLOAD_FOTO360 } from "@/graphql/mutations";
@@ -88,8 +88,24 @@ export default function PuntoDettaglioPage() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("single");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const { data, loading, refetch } = useQuery(GET_FOTO360, { variables: { puntoId } });
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
 
   const fotoList: Foto[] = data?.foto360 ?? [];
   const sortedFoto = [...fotoList].sort(
@@ -105,7 +121,15 @@ export default function PuntoDettaglioPage() {
   }
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(100vh - 80px)" }}>
+    <div
+      ref={containerRef}
+      className="flex flex-col"
+      style={{
+        height: isFullscreen ? "100vh" : "calc(100vh - 80px)",
+        background: "var(--bg)",
+        padding: isFullscreen ? "20px" : undefined,
+      }}
+    >
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -130,6 +154,17 @@ export default function PuntoDettaglioPage() {
           >
             <Columns2 className="w-3.5 h-3.5" />
             Confronta
+          </button>
+
+          {/* Fullscreen toggle */}
+          <button
+            onClick={toggleFullscreen}
+            className="btn-ghost p-2"
+            title={isFullscreen ? "Esci da schermo intero" : "Schermo intero"}
+          >
+            {isFullscreen
+              ? <Minimize2 className="w-4 h-4" />
+              : <Maximize2 className="w-4 h-4" />}
           </button>
         </div>
       </div>

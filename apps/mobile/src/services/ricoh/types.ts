@@ -23,6 +23,8 @@ export interface OscState {
     _recordableTime: number;
     _capturedPictures: number;
     _latestFileUrl: string;
+    /** Array di codici errore camera attivi. Vedi CAMERA_ERROR_MESSAGES per i messaggi. */
+    _cameraError?: string[];
   };
 }
 

@@ -180,8 +180,13 @@ export default function ImpostazioniScreen() {
 
       // ── Step 5: Verifica BLE (scan + connect + auth) ──
       setSetupStep('ble_connecting');
-      // Attendi 5s che il BT della camera si attivi dopo il comando
-      await new Promise((r) => setTimeout(r, 5000));
+      // Attendi che il BT della camera si attivi dopo il comando setOptions.
+      // La SC2 impiega ~5s. Mostriamo un countdown per dare feedback visivo.
+      for (let remaining = 5; remaining > 0; remaining--) {
+        setSetupStatusMsg(`Attivazione Bluetooth camera... ${remaining}s`);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      setSetupStatusMsg('Ricerca camera via Bluetooth...');
       const peripheralId = await scanAndConnect(deviceName, bleUuid);
       setSetupStatusMsg('BLE verificato!');
 

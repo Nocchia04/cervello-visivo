@@ -28,3 +28,28 @@ export const COMMAND_STATUS = {
 
 export const POLLING_INTERVAL_MS = 500;
 export const MAX_POLL_ATTEMPTS = 60; // 30 seconds max
+
+/**
+ * Mappa codici errore camera (campo _cameraError in OscState) → messaggi italiano.
+ * Riferimento: RICOH THETA API v2.1 + theta-client-react-native ThetaState.
+ */
+export const CAMERA_ERROR_MESSAGES: Record<string, string> = {
+  disabledShootingWhileBatteryCharging:
+    "Scatto disabilitato durante la ricarica — stacca il cavo USB e riprova.",
+  cameraFileSystemError:
+    "Errore filesystem camera — prova a riavviare la camera.",
+  noMemoryCard:
+    "Nessuna scheda di memoria rilevata — inserisci la SD card.",
+  imageProcessingFailed:
+    "Elaborazione immagine fallita — riprova lo scatto.",
+  recordingHardwareError:
+    "Errore hardware registrazione — riavvia la camera.",
+  failToDownloadFile:
+    "Download file fallito dalla camera.",
+  batteryChargeFail:
+    "Errore ricarica batteria — controlla il cavo.",
+  highTemperatureWarning:
+    "Camera surriscaldata — attendi che si raffreddi prima di scattare.",
+  batteryHighTemperature:
+    "Batteria surriscaldata — attendi che si raffreddi.",
+} as const;
