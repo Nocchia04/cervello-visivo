@@ -27,6 +27,32 @@ export const annotazioneResolvers = {
   },
 
   Mutation: {
+    aggiornaAnnotazione: async (
+      _parent: unknown,
+      args: { id: string; testo: string },
+      ctx: GraphQLContext
+    ) => {
+      const user = requireAuth(ctx);
+      if (user.role !== "ADMIN") {
+        throw new GraphQLError("Solo gli admin possono modificare le annotazioni", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+      const annotazione = await ctx.prisma.annotazione.findUnique({
+        where: { id: args.id },
+      });
+      if (!annotazione) {
+        throw new GraphQLError("Annotazione non trovata", {
+          extensions: { code: "NOT_FOUND" },
+        });
+      }
+      return ctx.prisma.annotazione.update({
+        where: { id: args.id },
+        data: { testo: args.testo.trim() },
+        include: { autore: true },
+      });
+    },
+
     eliminaAnnotazione: async (
       _parent: unknown,
       args: { id: string },

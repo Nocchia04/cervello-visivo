@@ -190,6 +190,15 @@ export const CREA_ANNOTAZIONE = gql`
   }
 `;
 
+export const AGGIORNA_ANNOTAZIONE = gql`
+  mutation AggiornaAnnotazione($id: ID!, $testo: String!) {
+    aggiornaAnnotazione(id: $id, testo: $testo) {
+      id
+      testo
+    }
+  }
+`;
+
 export const ELIMINA_ANNOTAZIONE = gql`
   mutation EliminaAnnotazione($id: ID!) {
     eliminaAnnotazione(id: $id) {

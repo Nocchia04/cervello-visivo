@@ -19,6 +19,7 @@ extend type Mutation {
     x: Float!
     y: Float!
   ): Annotazione!
+  aggiornaAnnotazione(id: ID!, testo: String!): Annotazione!
   eliminaAnnotazione(id: ID!): Annotazione!
 }
 

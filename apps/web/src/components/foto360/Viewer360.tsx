@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as THREE from "three";
-import { X, ChevronLeft, ChevronRight, MapPin, Check } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, MapPin, Check, Pencil, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { safeDate } from "@/lib/dateUtils";
-import { GET_ANNOTAZIONI } from "@/graphql/queries";
-import { CREA_ANNOTAZIONE } from "@/graphql/mutations";
+import { GET_ANNOTAZIONI, ME } from "@/graphql/queries";
+import { CREA_ANNOTAZIONE, ELIMINA_ANNOTAZIONE, AGGIORNA_ANNOTAZIONE } from "@/graphql/mutations";
 import { NUOVA_ANNOTAZIONE } from "@/graphql/subscriptions";
 
 interface Foto {
@@ -63,6 +63,9 @@ export default function Viewer360({
   } | null>(null);
   const [noteText, setNoteText] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
   // ── Annotation div refs (id → DOM element) ───────────────────────────────
   const annotDivsRef = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -71,6 +74,9 @@ export default function Viewer360({
   const currentFotoId = foto[currentIdx]?.id;
 
   // ── GraphQL ──────────────────────────────────────────────────────────────
+  const { data: meData } = useQuery(ME);
+  const isAdmin = meData?.me?.role === "ADMIN";
+
   const { data: annotData } = useQuery(GET_ANNOTAZIONI, {
     variables: { foto360Id: currentFotoId },
     skip: !currentFotoId,
@@ -83,6 +89,37 @@ export default function Viewer360({
       setNoteText("");
       setAddingNote(false);
     },
+  });
+
+  const [aggiornaAnnotazione] = useMutation(AGGIORNA_ANNOTAZIONE, {
+    update(cache, { data }) {
+      const updated = data?.aggiornaAnnotazione;
+      if (!updated || !currentFotoId) return;
+      cache.updateQuery(
+        { query: GET_ANNOTAZIONI, variables: { foto360Id: currentFotoId } },
+        (existing) =>
+          existing
+            ? { annotazioni: existing.annotazioni.map((a: Annotazione) => a.id === updated.id ? { ...a, testo: updated.testo } : a) }
+            : existing
+      );
+    },
+    onCompleted: () => { setEditingId(null); setEditText(""); },
+  });
+
+  const [eliminaAnnotazione] = useMutation(ELIMINA_ANNOTAZIONE, {
+    update(cache, { data }) {
+      const deletedId = data?.eliminaAnnotazione?.id;
+      const fotoId = data?.eliminaAnnotazione?.foto360Id;
+      if (!deletedId || !fotoId) return;
+      cache.updateQuery(
+        { query: GET_ANNOTAZIONI, variables: { foto360Id: fotoId } },
+        (existing) =>
+          existing
+            ? { annotazioni: existing.annotazioni.filter((a: Annotazione) => a.id !== deletedId) }
+            : existing
+      );
+    },
+    onCompleted: () => { setConfirmDeleteId(null); setExpandedId(null); },
   });
 
   useSubscription(NUOVA_ANNOTAZIONE, {
@@ -117,6 +154,9 @@ export default function Viewer360({
     setPendingNote(null);
     setNoteText("");
     setExpandedId(null);
+    setConfirmDeleteId(null);
+    setEditingId(null);
+    setEditText("");
   }, [currentIdx]);
 
   // ── Load texture ─────────────────────────────────────────────────────────
@@ -434,68 +474,68 @@ export default function Viewer360({
                   color: "#1a1a1a",
                   padding: "10px 12px 8px",
                   borderRadius: 10,
-                  width: 220,
+                  width: 230,
                   boxShadow: "0 6px 24px rgba(0,0,0,0.55)",
                   fontSize: 12,
                   zIndex: 20,
-                  whiteSpace: "pre-wrap",
                   pointerEvents: "auto",
                 }}
               >
                 {/* Bubble arrow */}
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: -8,
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    width: 0,
-                    height: 0,
-                    borderLeft: "8px solid transparent",
-                    borderRight: "8px solid transparent",
-                    borderTop: "8px solid #fffde7",
-                  }}
-                />
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: 6,
-                  }}
-                >
-                  <span style={{ fontWeight: 700, fontSize: 11, color: "#555" }}>
-                    {annot.autore.nome} {annot.autore.cognome}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpandedId(null);
-                    }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "0 0 0 8px",
-                      fontSize: 16,
-                      lineHeight: 1,
-                      color: "#999",
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-                <div style={{ lineHeight: 1.45, marginBottom: 6 }}>
-                  {annot.testo}
-                </div>
-                <div style={{ fontSize: 10, color: "#aaa" }}>
-                  {safeDate(annot.createdAt).toLocaleString("it-IT", {
-                    day: "2-digit",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </div>
+                <div style={{ position: "absolute", bottom: -8, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid #fffde7" }} />
+
+                {confirmDeleteId === annot.id ? (
+                  /* ── Confirm delete ── */
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: 12, marginBottom: 10, color: "#c0392b" }}>Eliminare questa nota?</p>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={(e) => { e.stopPropagation(); eliminaAnnotazione({ variables: { id: annot.id } }); }} style={{ flex: 1, background: "#c0392b", color: "#fff", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Sì, elimina</button>
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }} style={{ flex: 1, background: "rgba(0,0,0,0.08)", color: "#333", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, cursor: "pointer" }}>Annulla</button>
+                    </div>
+                  </div>
+                ) : editingId === annot.id ? (
+                  /* ── Edit ── */
+                  <div>
+                    <textarea
+                      autoFocus
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") { setEditingId(null); setEditText(""); }
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (editText.trim()) aggiornaAnnotazione({ variables: { id: annot.id, testo: editText } }); }
+                      }}
+                      style={{ width: "100%", minHeight: 64, background: "rgba(0,0,0,0.04)", border: "1px solid #d0d0d0", borderRadius: 6, padding: "6px 8px", fontSize: 12, resize: "vertical", outline: "none", marginBottom: 8, fontFamily: "inherit" }}
+                    />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={(e) => { e.stopPropagation(); if (editText.trim()) aggiornaAnnotazione({ variables: { id: annot.id, testo: editText } }); }} disabled={!editText.trim()} style={{ flex: 1, background: "#6366f1", color: "#fff", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Salva</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingId(null); setEditText(""); }} style={{ flex: 1, background: "rgba(0,0,0,0.08)", color: "#333", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, cursor: "pointer" }}>Annulla</button>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Normal ── */
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 11, color: "#555" }}>{annot.autore.nome} {annot.autore.cognome}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, paddingLeft: 8 }}>
+                        {isAdmin && (
+                          <>
+                            <button onClick={(e) => { e.stopPropagation(); setEditingId(annot.id); setEditText(annot.testo); setConfirmDeleteId(null); }} title="Modifica nota" style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#6366f1", display: "flex", alignItems: "center" }}>
+                              <Pencil size={13} />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(annot.id); }} title="Elimina nota" style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#c0392b", display: "flex", alignItems: "center" }}>
+                              <Trash2 size={13} />
+                            </button>
+                          </>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); setExpandedId(null); }} style={{ background: "none", border: "none", cursor: "pointer", padding: "0 0 0 4px", fontSize: 16, lineHeight: 1, color: "#999" }}>×</button>
+                      </div>
+                    </div>
+                    <div style={{ lineHeight: 1.45, marginBottom: 6, whiteSpace: "pre-wrap" }}>{annot.testo}</div>
+                    <div style={{ fontSize: 10, color: "#aaa" }}>
+                      {safeDate(annot.createdAt).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

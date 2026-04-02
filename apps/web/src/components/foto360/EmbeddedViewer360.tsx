@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as THREE from "three";
-import { MapPin, Check, X, ChevronLeft, ChevronRight, Clock, Trash2 } from "lucide-react";
+import { MapPin, Check, X, ChevronLeft, ChevronRight, Clock, Trash2, Pencil } from "lucide-react";
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { safeDate } from "@/lib/dateUtils";
 import { GET_ANNOTAZIONI, ME } from "@/graphql/queries";
-import { CREA_ANNOTAZIONE, ELIMINA_ANNOTAZIONE } from "@/graphql/mutations";
+import { CREA_ANNOTAZIONE, ELIMINA_ANNOTAZIONE, AGGIORNA_ANNOTAZIONE } from "@/graphql/mutations";
 import { NUOVA_ANNOTAZIONE } from "@/graphql/subscriptions";
 
 interface Foto {
@@ -60,6 +60,8 @@ export default function EmbeddedViewer360({
   const [noteText, setNoteText] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
   const annotDivsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const annotationsRef = useRef<Annotazione[]>([]);
@@ -83,6 +85,21 @@ export default function EmbeddedViewer360({
       setNoteText("");
       setAddingNote(false);
     },
+  });
+
+  const [aggiornaAnnotazione] = useMutation(AGGIORNA_ANNOTAZIONE, {
+    update(cache, { data }) {
+      const updated = data?.aggiornaAnnotazione;
+      if (!updated || !currentFotoId) return;
+      cache.updateQuery(
+        { query: GET_ANNOTAZIONI, variables: { foto360Id: currentFotoId } },
+        (existing) =>
+          existing
+            ? { annotazioni: existing.annotazioni.map((a: Annotazione) => a.id === updated.id ? { ...a, testo: updated.testo } : a) }
+            : existing
+      );
+    },
+    onCompleted: () => { setEditingId(null); setEditText(""); },
   });
 
   const [eliminaAnnotazione] = useMutation(ELIMINA_ANNOTAZIONE, {
@@ -135,6 +152,8 @@ export default function EmbeddedViewer360({
     setNoteText("");
     setExpandedId(null);
     setConfirmDeleteId(null);
+    setEditingId(null);
+    setEditText("");
   }, [currentIndex]);
 
   // ── Load texture ─────────────────────────────────────────────────────────
@@ -427,6 +446,35 @@ export default function EmbeddedViewer360({
                       </button>
                     </div>
                   </div>
+                ) : editingId === annot.id ? (
+                  /* ── Edit state ───────────────────────────────── */
+                  <div>
+                    <textarea
+                      autoFocus
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") { setEditingId(null); setEditText(""); }
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (editText.trim()) aggiornaAnnotazione({ variables: { id: annot.id, testo: editText } }); }
+                      }}
+                      style={{ width: "100%", minHeight: 64, background: "rgba(0,0,0,0.04)", border: "1px solid #d0d0d0", borderRadius: 6, padding: "6px 8px", fontSize: 12, resize: "vertical", outline: "none", marginBottom: 8, fontFamily: "inherit" }}
+                    />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (editText.trim()) aggiornaAnnotazione({ variables: { id: annot.id, testo: editText } }); }}
+                        disabled={!editText.trim()}
+                        style={{ flex: 1, background: "#6366f1", color: "#fff", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                      >
+                        Salva
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingId(null); setEditText(""); }}
+                        style={{ flex: 1, background: "rgba(0,0,0,0.08)", color: "#333", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, cursor: "pointer" }}
+                      >
+                        Annulla
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   /* ── Normal state ─────────────────────────────── */
                   <>
@@ -434,13 +482,22 @@ export default function EmbeddedViewer360({
                       <span style={{ fontWeight: 700, fontSize: 11, color: "#555" }}>{annot.autore.nome} {annot.autore.cognome}</span>
                       <div style={{ display: "flex", alignItems: "center", gap: 4, paddingLeft: 8 }}>
                         {isAdmin && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(annot.id); }}
-                            title="Elimina nota"
-                            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#c0392b", display: "flex", alignItems: "center" }}
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setEditingId(annot.id); setEditText(annot.testo); setConfirmDeleteId(null); }}
+                              title="Modifica nota"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#6366f1", display: "flex", alignItems: "center" }}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(annot.id); }}
+                              title="Elimina nota"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#c0392b", display: "flex", alignItems: "center" }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </>
                         )}
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedId(null); }}
