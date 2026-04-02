@@ -285,7 +285,7 @@ export default function Viewer360({
     lonRef.current += dx * 0.3;
     latRef.current = Math.max(
       -85,
-      Math.min(85, latRef.current - dy * 0.3)
+      Math.min(85, latRef.current + dy * 0.3)
     );
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
   };

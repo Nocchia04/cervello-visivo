@@ -136,7 +136,7 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
       lonRef.current += dx * 0.3;
-      latRef.current = Math.max(-85, Math.min(85, latRef.current - dy * 0.3));
+      latRef.current = Math.max(-85, Math.min(85, latRef.current + dy * 0.3));
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
       onRotateRef.current?.(lonRef.current, latRef.current);
     };
@@ -155,7 +155,7 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       const dx = e.touches[0].clientX - lastTouchRef.current.x;
       const dy = e.touches[0].clientY - lastTouchRef.current.y;
       lonRef.current += dx * 0.3;
-      latRef.current = Math.max(-85, Math.min(85, latRef.current - dy * 0.3));
+      latRef.current = Math.max(-85, Math.min(85, latRef.current + dy * 0.3));
       lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       onRotateRef.current?.(lonRef.current, latRef.current);
     };
