@@ -128,6 +128,15 @@ export const AGGIUNGI_PUNTO_DI_SCATTO = gql`
   }
 `;
 
+export const RINOMINA_PUNTO_DI_SCATTO = gql`
+  mutation RinominaPuntoDiScatto($id: ID!, $nome: String!) {
+    rinominaPuntoDiScatto(id: $id, nome: $nome) {
+      id
+      nome
+    }
+  }
+`;
+
 export const SPOSTA_PUNTO_DI_SCATTO = gql`
   mutation SpostaPuntoDiScatto($id: ID!, $x: Float!, $y: Float!) {
     spostaPuntoDiScatto(id: $id, x: $x, y: $y) {

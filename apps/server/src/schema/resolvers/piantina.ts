@@ -32,6 +32,15 @@ export const piantinaResolvers = {
       requireAuth(ctx);
       return ctx.prisma.piantina.findUnique({ where: { id: args.id } });
     },
+
+    puntoDiScatto: async (
+      _parent: unknown,
+      args: { id: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+      return ctx.prisma.puntoDiScatto.findUnique({ where: { id: args.id } });
+    },
   },
 
   Mutation: {
@@ -115,6 +124,28 @@ export const piantinaResolvers = {
       return ctx.prisma.puntoDiScatto.update({
         where: { id: args.id },
         data: { x: args.x, y: args.y },
+      });
+    },
+
+    rinominaPuntoDiScatto: async (
+      _parent: unknown,
+      args: { id: string; nome: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+
+      const punto = await ctx.prisma.puntoDiScatto.findUnique({
+        where: { id: args.id },
+      });
+      if (!punto) {
+        throw new GraphQLError("Punto di scatto non trovato", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      return ctx.prisma.puntoDiScatto.update({
+        where: { id: args.id },
+        data: { nome: args.nome.trim() },
       });
     },
   },

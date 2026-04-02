@@ -78,6 +78,15 @@ export const GET_PIANTINA = gql`
   }
 `;
 
+export const GET_PUNTO_DI_SCATTO = gql`
+  query GetPuntoDiScatto($id: ID!) {
+    puntoDiScatto(id: $id) {
+      id
+      nome
+    }
+  }
+`;
+
 export const GET_FOTO360 = gql`
   query GetFoto360($puntoId: ID!, $dataInizio: String, $dataFine: String) {
     foto360(puntoId: $puntoId, dataInizio: $dataInizio, dataFine: $dataFine) {

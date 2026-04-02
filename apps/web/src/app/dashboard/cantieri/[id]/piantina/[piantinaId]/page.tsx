@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import { useParams } from "next/navigation";
-import { ArrowLeft, X, Camera, Plus, Upload, Trash2 } from "lucide-react";
+import { ArrowLeft, X, Camera, Plus, Upload, Trash2, Pencil, Check } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import PiantinaCanvas from "@/components/piantina/PiantinaCanvas";
@@ -12,6 +12,7 @@ import {
   AGGIUNGI_PUNTO_DI_SCATTO,
   SPOSTA_PUNTO_DI_SCATTO,
   UPLOAD_FOTO360,
+  RINOMINA_PUNTO_DI_SCATTO,
 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
@@ -118,9 +119,29 @@ function PuntoPanel({
   onOpenViewer: (foto: Foto[], index: number) => void;
   onRefetch: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [nameValue, setNameValue] = useState(punto.nome);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const [rinomina, { loading: renaming }] = useMutation(RINOMINA_PUNTO_DI_SCATTO);
+
   const sortedFoto = [...punto.foto360].sort(
     (a, b) => safeDate(b.timestamp).getTime() - safeDate(a.timestamp).getTime()
   );
+
+  function startEdit() {
+    setNameValue(punto.nome);
+    setEditing(true);
+    setTimeout(() => nameInputRef.current?.select(), 0);
+  }
+
+  async function confirmEdit() {
+    const trimmed = nameValue.trim();
+    if (!trimmed || trimmed === punto.nome) { setEditing(false); return; }
+    await rinomina({ variables: { id: punto.id, nome: trimmed } });
+    onRefetch();
+    setEditing(false);
+  }
 
   return (
     <div
@@ -136,13 +157,37 @@ function PuntoPanel({
         className="flex items-center justify-between p-4 flex-shrink-0"
         style={{ borderBottom: "1px solid var(--border)" }}
       >
-        <div>
-          <h3 className="font-semibold">{punto.nome}</h3>
+        <div className="flex-1 min-w-0 mr-2">
+          {editing ? (
+            <div className="flex items-center gap-1">
+              <input
+                ref={nameInputRef}
+                className="input-field text-sm font-semibold py-0.5 px-2 h-7 flex-1 min-w-0"
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(); if (e.key === "Escape") setEditing(false); }}
+                autoFocus
+              />
+              <button onClick={confirmEdit} disabled={renaming} className="btn-ghost p-1" title="Conferma">
+                <Check className="w-3.5 h-3.5 text-green-600" />
+              </button>
+              <button onClick={() => setEditing(false)} className="btn-ghost p-1" title="Annulla">
+                <X className="w-3.5 h-3.5 text-red-500" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-semibold truncate">{punto.nome}</h3>
+              <button onClick={startEdit} className="btn-ghost p-0.5 flex-shrink-0" title="Rinomina">
+                <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+              </button>
+            </div>
+          )}
           <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
             {punto.foto360.length} foto
           </p>
         </div>
-        <button onClick={onClose} className="btn-ghost p-1.5">
+        <button onClick={onClose} className="btn-ghost p-1.5 flex-shrink-0">
           <X className="w-4 h-4" />
         </button>
       </div>

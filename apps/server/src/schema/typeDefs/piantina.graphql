@@ -24,6 +24,7 @@ type PuntoDiScatto {
 extend type Query {
   piantine(cantiereId: ID!): [Piantina!]!
   piantina(id: ID!): Piantina
+  puntoDiScatto(id: ID!): PuntoDiScatto
 }
 
 extend type Mutation {
@@ -46,4 +47,5 @@ extend type Mutation {
     x: Float!
     y: Float!
   ): PuntoDiScatto!
+  rinominaPuntoDiScatto(id: ID!, nome: String!): PuntoDiScatto!
 }

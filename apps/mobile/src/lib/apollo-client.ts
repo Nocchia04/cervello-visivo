@@ -13,7 +13,7 @@ import Constants from "expo-constants";
 import { getAuthToken } from "./storage";
 
 const PROD_HTTP_URL = "https://holobuilder-api.aitalia-test.it/graphql";
-const PROD_WS_URL  = "https://holobuilder-api.aitalia-test.it/graphql";
+const PROD_WS_URL  = "wss://holobuilder-api.aitalia-test.it/graphql";
 
 function getServerHost(): string {
   if (Platform.OS === "android") return "10.0.2.2";
@@ -71,6 +71,7 @@ const splitLink = split(
   new ApolloLink((operation, forward) => getWsLink().request(operation, forward)!),
   authLink.concat(httpLink)
 );
+
 
 export const apolloClient = new ApolloClient({
   link: splitLink,
