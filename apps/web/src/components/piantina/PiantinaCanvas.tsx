@@ -27,6 +27,7 @@ interface PiantinaCanvasProps {
   onPuntoDragEnd: (puntoId: string, newX: number, newY: number) => void;
   onCanvasClick: (x: number, y: number) => void;
   onPuntoClick?: (puntoId: string) => void;
+  leftClickPans?: boolean;
 }
 
 export default function PiantinaCanvas({
@@ -38,6 +39,7 @@ export default function PiantinaCanvas({
   onPuntoDragEnd,
   onCanvasClick,
   onPuntoClick,
+  leftClickPans,
 }: PiantinaCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -77,7 +79,7 @@ export default function PiantinaCanvas({
   }, [handleWheel]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || e.altKey) {
+    if (e.button === 1 || e.altKey || (leftClickPans && e.button === 0 && !dragRef.current)) {
       e.preventDefault();
       isPanningRef.current = true;
       lastPanRef.current = { x: e.clientX, y: e.clientY };

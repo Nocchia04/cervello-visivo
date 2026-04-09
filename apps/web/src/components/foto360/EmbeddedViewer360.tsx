@@ -29,12 +29,14 @@ interface EmbeddedViewer360Props {
   foto: Foto[];
   currentIndex: number;
   onIndexChange: (index: number) => void;
+  hideTimeTravelPanel?: boolean;
 }
 
 export default function EmbeddedViewer360({
   foto,
   currentIndex,
   onIndexChange,
+  hideTimeTravelPanel,
 }: EmbeddedViewer360Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -584,7 +586,7 @@ export default function EmbeddedViewer360({
       )}
 
       {/* ── Floating time travel panel (bottom-left) ─────────────────────── */}
-      {foto.length > 0 && !pendingNote && (
+      {!hideTimeTravelPanel && foto.length > 0 && !pendingNote && (
         <div
           style={{
             position: "absolute", bottom: 16, left: 16, zIndex: 20,
