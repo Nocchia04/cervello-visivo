@@ -414,6 +414,7 @@ export default function PiantinaPage() {
   const [confirmDeletePuntoId, setConfirmDeletePuntoId] = useState<string | null>(null);
   const [renamingPunto, setRenamingPunto] = useState(false);
   const [renamingPuntoValue, setRenamingPuntoValue] = useState("");
+  const [editingPositions, setEditingPositions] = useState(false);
 
   // ── Compare rotation sync refs ─────────────────────────────────────────────
   const leftViewerRef = useRef<SyncedViewer360Handle>(null);
@@ -856,6 +857,8 @@ export default function PiantinaPage() {
                 onCanvasClick={handleCanvasClick}
                 onPuntoClick={handlePuntoClick}
                 leftClickPans
+                editModeExternal={editingPositions}
+                onEditModeChange={setEditingPositions}
               />
             </div>
 
@@ -960,6 +963,7 @@ export default function PiantinaPage() {
                     onToggle={() =>
                       setDateDropdownOpen(!dateDropdownOpen)
                     }
+                    onDelete={handleDeleteFoto}
                   />
                 )}
               </div>
@@ -1059,6 +1063,29 @@ export default function PiantinaPage() {
         >
           <Plus className="w-4 h-4" />
           Aggiungi punto
+        </button>
+
+        {/* Edit positions button */}
+        <button
+          onClick={() => setEditingPositions(!editingPositions)}
+          style={{
+            background: editingPositions ? "#6366f1" : "rgba(0,0,0,0.6)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 999,
+            padding: "8px 16px",
+            fontSize: 13,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            cursor: "pointer",
+            backdropFilter: "blur(8px)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Pencil className="w-4 h-4" />
+          {editingPositions ? "Fine" : "Modifica"}
         </button>
 
         {/* Upload foto button */}

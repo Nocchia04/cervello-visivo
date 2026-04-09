@@ -28,6 +28,9 @@ interface PiantinaCanvasProps {
   onCanvasClick: (x: number, y: number) => void;
   onPuntoClick?: (puntoId: string) => void;
   leftClickPans?: boolean;
+  /** Externally controlled edit mode (overrides internal state) */
+  editModeExternal?: boolean;
+  onEditModeChange?: (editing: boolean) => void;
 }
 
 export default function PiantinaCanvas({
@@ -40,6 +43,8 @@ export default function PiantinaCanvas({
   onCanvasClick,
   onPuntoClick,
   leftClickPans,
+  editModeExternal,
+  onEditModeChange,
 }: PiantinaCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -48,8 +53,13 @@ export default function PiantinaCanvas({
   const isPanningRef = useRef(false);
   const lastPanRef = useRef({ x: 0, y: 0 });
 
-  // Edit mode
-  const [isEditMode, setIsEditMode] = useState(false);
+  // Edit mode — use external prop if provided, otherwise internal state
+  const [isEditModeInternal, setIsEditModeInternal] = useState(false);
+  const isEditMode = editModeExternal !== undefined ? editModeExternal : isEditModeInternal;
+  const setIsEditMode = (v: boolean) => {
+    setIsEditModeInternal(v);
+    onEditModeChange?.(v);
+  };
 
   // Drag tracking
   const dragRef = useRef<{
@@ -217,7 +227,7 @@ export default function PiantinaCanvas({
       {/* Edit mode toggle — hidden in minimap mode */}
       {!leftClickPans && <div className="absolute top-3 left-3">
         <button
-          onClick={() => setIsEditMode((prev) => !prev)}
+          onClick={() => setIsEditMode(!isEditMode)}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
           style={
             isEditMode
