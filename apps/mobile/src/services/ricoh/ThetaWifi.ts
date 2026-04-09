@@ -19,6 +19,7 @@ import {
   EmitterSubscription,
   PermissionsAndroid,
 } from "react-native";
+import { dlog } from "../../lib/debugLog";
 
 const { ThetaWifiModule } = NativeModules;
 
@@ -96,12 +97,19 @@ export async function connectToCamera(
   ssid: string,
   password: string
 ): Promise<void> {
-  if (!isAndroid10Plus || !ThetaWifiModule) return;
+  dlog('WIFI', `connectToCamera("${ssid}")`);
+  if (!isAndroid10Plus || !ThetaWifiModule) {
+    dlog('WIFI', 'Skip — non Android 10+ o modulo non disponibile');
+    return;
+  }
   await requestWifiPermission();
+  dlog('WIFI', 'Permessi OK, connessione...');
   await ThetaWifiModule.connectToCamera(ssid, password);
+  dlog('WIFI', 'WiFi connesso OK');
 }
 
 export async function disconnectFromCamera(): Promise<void> {
+  dlog('WIFI', 'disconnectFromCamera()');
   if (!isAndroid10Plus || !ThetaWifiModule) return;
   await ThetaWifiModule.disconnectFromCamera();
 }

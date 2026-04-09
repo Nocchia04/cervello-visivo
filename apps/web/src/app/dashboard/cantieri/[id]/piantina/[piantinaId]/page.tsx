@@ -81,10 +81,11 @@ function findClosestFotoIndex(fotos: Foto[], referenceTs: string): number {
 }
 
 function sortFotoDesc(fotos: Foto[]): Foto[] {
-  return [...fotos].sort(
-    (a, b) =>
-      safeDate(b.timestamp).getTime() - safeDate(a.timestamp).getTime()
-  );
+  return [...fotos].sort((a, b) => {
+    const diff = safeDate(b.timestamp).getTime() - safeDate(a.timestamp).getTime();
+    // Tiebreaker by ID for stable order when timestamps are equal
+    return diff !== 0 ? diff : a.id.localeCompare(b.id);
+  });
 }
 
 // ─── Upload Foto Button (floating pill style) ─────────────────────────────────
@@ -251,11 +252,15 @@ function DateDropdown({
       >
         <span style={{ flex: 1, textAlign: "left" }}>
           {currentFoto
-            ? safeDate(currentFoto.timestamp).toLocaleDateString("it-IT", {
+            ? `${safeDate(currentFoto.timestamp).toLocaleDateString("it-IT", {
                 day: "2-digit",
                 month: "short",
                 year: "numeric",
-              })
+              })} ${safeDate(currentFoto.timestamp).toLocaleTimeString("it-IT", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })} (#${selectedIndex + 1})`
             : "Seleziona data"}
         </span>
         <ChevronDown
@@ -321,6 +326,7 @@ function DateDropdown({
                   padding: 0,
                 }}
               >
+                <span style={{ color: "var(--text-muted)", marginRight: 4, minWidth: 18, display: "inline-block" }}>#{idx + 1}</span>
                 {safeDate(foto.timestamp).toLocaleDateString("it-IT", {
                   day: "2-digit",
                   month: "short",
@@ -331,6 +337,7 @@ function DateDropdown({
                   {safeDate(foto.timestamp).toLocaleTimeString("it-IT", {
                     hour: "2-digit",
                     minute: "2-digit",
+                    second: "2-digit",
                   })}
                 </span>
               </button>
@@ -565,9 +572,10 @@ export default function PiantinaPage() {
       setCompareMode(false);
       setCompareFotoIndex(0);
     } else {
-      // Enter compare mode — second date defaults to next available
+      // Enter compare mode — pick a different foto than the current one
       setCompareMode(true);
-      setCompareFotoIndex(selectedFotoSorted.length > 1 ? 1 : 0);
+      const nextIdx = selectedFotoIndex === 0 ? 1 : 0;
+      setCompareFotoIndex(selectedFotoSorted.length > 1 ? nextIdx : 0);
     }
   };
 

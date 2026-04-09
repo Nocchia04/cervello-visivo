@@ -34,7 +34,9 @@ import { RicohPreview } from "../../src/components/RicohPreview";
 import type { RicohPreviewHandle } from "../../src/components/RicohPreview";
 import Viewer360Native from "../../src/components/Viewer360Native";
 import { UploadQueueBadge } from "../../src/components/UploadQueueBadge";
+import { DebugLogOverlay } from "../../src/components/DebugLogOverlay";
 import { colors, spacing, radius, typography, shadow } from "../../src/lib/theme";
+import { dlog } from "../../src/lib/debugLog";
 import type { OscFileEntry } from "../../src/services/ricoh/types";
 
 type BleStatus = "idle" | "connecting" | "connected" | "error" | "no_setup";
@@ -52,17 +54,22 @@ class BleNoSetupError extends Error {
 
 async function performBleConnect(): Promise<string> {
   const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
+  dlog('BLE', `Credenziali: setup=${setupComplete}, device="${deviceName}", periph="${peripheralId?.substring(0, 12) ?? 'null'}"`);
   if (!setupComplete || !uuid || !deviceName) {
+    dlog('BLE', 'Setup non completato — skip');
     throw new BleNoSetupError();
   }
   if (peripheralId) {
     try {
+      dlog('BLE', 'Tentativo connessione diretta per peripheralId...');
       await connectByPeripheralId(peripheralId, uuid);
-    } catch {
-      // Fallback: scan (più lento ma funziona dopo reset/sostituzione camera)
+      dlog('BLE', 'Connessione diretta OK');
+    } catch (e: any) {
+      dlog('BLE', `Connessione diretta fallita: ${e.message} — fallback scan`);
       await scanAndConnect(deviceName, uuid);
     }
   } else {
+    dlog('BLE', 'Nessun peripheralId — scan completo');
     await scanAndConnect(deviceName, uuid);
   }
   return deviceName;
@@ -83,6 +90,7 @@ export default function ScattoScreen() {
 
   const [bleStatus, setBleStatus] = useState<BleStatus>("idle");
   const [bleStatusMsg, setBleStatusMsg] = useState("");
+  const [showDebugLog, setShowDebugLog] = useState(false);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [takingStep, setTakingStep] = useState("");
@@ -624,6 +632,26 @@ export default function ScattoScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Debug log button */}
+      <TouchableOpacity
+        onPress={() => setShowDebugLog(true)}
+        style={{
+          position: "absolute",
+          bottom: insets.bottom + 12,
+          right: 12,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          borderRadius: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          zIndex: 50,
+        }}
+      >
+        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>Log</Text>
+      </TouchableOpacity>
+
+      {/* Debug log overlay */}
+      <DebugLogOverlay visible={showDebugLog} onClose={() => setShowDebugLog(false)} />
     </>
   );
 }

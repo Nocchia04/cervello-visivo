@@ -8,6 +8,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
 import { cameraFetch, downloadFileViaCameraNetwork } from "./ThetaWifi";
+import { dlog } from "../../lib/debugLog";
 import {
   RICOH_BASE_URL,
   OSC_ENDPOINTS,
@@ -31,19 +32,26 @@ class RicohClient {
   }
 
   private async oscGet(endpoint: string): Promise<any> {
+    dlog('CAM', `GET ${endpoint}`);
     const res = await cameraFetch(`${this.baseUrl}${endpoint}`);
-    if (res.status !== 200) throw new Error(`HTTP ${res.status} on ${endpoint}`);
+    if (res.status !== 200) {
+      dlog('CAM', `GET ${endpoint} → HTTP ${res.status}: ${res.body.substring(0, 200)}`);
+      throw new Error(`HTTP ${res.status} on ${endpoint}`);
+    }
     return JSON.parse(res.body);
   }
 
   private async oscPost(endpoint: string, body: object): Promise<any> {
+    dlog('CAM', `POST ${endpoint} ${JSON.stringify(body).substring(0, 100)}`);
     const res = await cameraFetch(
       `${this.baseUrl}${endpoint}`,
       "POST",
       JSON.stringify(body)
     );
-    if (res.status !== 200) throw new Error(`HTTP ${res.status} on ${endpoint}`);
-    // SC2 può rispondere con body vuoto su alcuni comandi
+    if (res.status !== 200) {
+      dlog('CAM', `POST ${endpoint} → HTTP ${res.status}: ${res.body.substring(0, 200)}`);
+      throw new Error(`HTTP ${res.status} on ${endpoint}`);
+    }
     if (!res.body.trim()) return {};
     return JSON.parse(res.body);
   }
@@ -146,9 +154,11 @@ class RicohClient {
 
   async checkConnection(): Promise<boolean> {
     try {
-      await this.getInfo();
+      const info = await this.getInfo();
+      dlog('CAM', `checkConnection OK: ${info.model ?? 'unknown'} (${info.serialNumber ?? '?'})`);
       return true;
-    } catch {
+    } catch (e: any) {
+      dlog('CAM', `checkConnection FAIL: ${e.message}`);
       return false;
     }
   }

@@ -14,6 +14,7 @@
 
 import { BleManager, Device, State, type Subscription } from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid } from 'react-native';
+import { dlog } from '../../../lib/debugLog';
 import {
   THETA_BLE_SERVICES,
   THETA_BLE_CHARACTERISTICS,
@@ -30,13 +31,14 @@ let _device: Device | null = null;
 async function requestBlePermissions(): Promise<void> {
   if (Platform.OS !== 'android') return;
   const version = Platform.Version as number;
+  dlog('BLE', `requestBlePermissions — Android ${version}`);
 
   if (version >= 31) {
-    // Android 12+ — BLUETOOTH_SCAN + BLUETOOTH_CONNECT
     const results = await PermissionsAndroid.requestMultiple([
       'android.permission.BLUETOOTH_SCAN' as any,
       'android.permission.BLUETOOTH_CONNECT' as any,
     ]);
+    dlog('BLE', `Permessi: ${JSON.stringify(results)}`);
     const denied = Object.values(results).some(
       (r) => r !== PermissionsAndroid.RESULTS.GRANTED
     );
@@ -49,6 +51,7 @@ async function requestBlePermissions(): Promise<void> {
 
 async function waitForBluetooth(): Promise<void> {
   const state = await _manager.state();
+  dlog('BLE', `Stato Bluetooth: ${state}`);
   if (state === State.PoweredOn) return;
 
   return new Promise((resolve, reject) => {
@@ -86,14 +89,20 @@ function scanForDevice(deviceName: string): Promise<Device> {
       );
     }, BLE_SCAN_TIMEOUT_MS);
 
+    dlog('BLE', `Scan avviato — cercando "${deviceName}" (timeout ${BLE_SCAN_TIMEOUT_MS}ms)`);
     _manager.startDeviceScan(null, { allowDuplicates: false }, (error, device) => {
       if (error) {
+        dlog('BLE', `Scan errore: ${error.message} (code: ${error.errorCode})`);
         clearTimeout(timeout);
         _manager.stopDeviceScan();
         reject(new Error(error.message));
         return;
       }
+      if (device?.name) {
+        dlog('BLE', `Trovato device: "${device.name}" (id: ${device.id})`);
+      }
       if (device?.name === deviceName) {
+        dlog('BLE', `Match! Connessione a ${device.id}...`);
         clearTimeout(timeout);
         _manager.stopDeviceScan();
         resolve(device);
@@ -106,6 +115,7 @@ function scanForDevice(deviceName: string): Promise<Device> {
 
 async function authenticateDevice(uuid: string): Promise<void> {
   if (!_device) throw new Error('Device non connesso');
+  dlog('BLE', `Autenticazione con UUID: ${uuid.substring(0, 8)}...`);
   // Write UUID string as UTF-8 bytes → base64
   const uuidB64 = btoa(unescape(encodeURIComponent(uuid)));
   await _device.writeCharacteristicWithResponseForService(
@@ -125,9 +135,10 @@ async function authenticateDevice(uuid: string): Promise<void> {
  * @returns           peripheralId da salvare per `connectByPeripheralId`
  */
 export async function scanAndConnect(deviceName: string, bleUuid: string): Promise<string> {
+  dlog('BLE', `scanAndConnect("${deviceName}")`);
   await requestBlePermissions();
   await waitForBluetooth();
-  await disconnectBle(); // cleanup connessione precedente
+  await disconnectBle();
 
   const device = await scanForDevice(deviceName);
   return _connectAndAuth(device, bleUuid);
@@ -139,6 +150,7 @@ export async function scanAndConnect(deviceName: string, bleUuid: string): Promi
  * Se la connessione fallisce, rilancia l'errore: il chiamante può fare fallback su scanAndConnect.
  */
 export async function connectByPeripheralId(peripheralId: string, bleUuid: string): Promise<void> {
+  dlog('BLE', `connectByPeripheralId("${peripheralId.substring(0, 12)}...")`);
   await requestBlePermissions();
   await waitForBluetooth();
   await disconnectBle();
@@ -148,15 +160,20 @@ export async function connectByPeripheralId(peripheralId: string, bleUuid: strin
 }
 
 async function _connectAndAuth(device: Device, bleUuid: string): Promise<string> {
+  dlog('BLE', `Connessione a device ${device.id}...`);
   const connected = await device.connect({ autoConnect: false });
+  dlog('BLE', 'Connesso. Discovering services...');
   await connected.discoverAllServicesAndCharacteristics();
   _device = connected;
+  dlog('BLE', `Services discovered. MTU: ${connected.mtu}`);
 
-  connected.onDisconnected(() => {
+  connected.onDisconnected((err) => {
+    dlog('BLE', `Disconnesso${err ? `: ${err.message}` : ' (pulito)'}`);
     _device = null;
   });
 
   await authenticateDevice(bleUuid);
+  dlog('BLE', 'Autenticato OK');
   return connected.id;
 }
 
@@ -170,6 +187,7 @@ export function getConnectedDeviceId(): string | undefined {
  * Scrive 0x01 su TAKE_PICTURE, aspetta notifica 0x00 (= scatto completato).
  */
 export async function takePictureViaBle(): Promise<void> {
+  dlog('BLE', 'takePictureViaBle()');
   if (!_device) throw new Error('Camera BLE non connessa. Premi "Connetti Camera" prima di scattare.');
 
   return new Promise((resolve, reject) => {
