@@ -64,8 +64,8 @@ async function waitForBluetooth(): Promise<void> {
 
     setTimeout(() => {
       sub.remove();
-      reject(new Error('Timeout attesa Bluetooth (10s).'));
-    }, 10_000);
+      reject(new Error('Timeout attesa Bluetooth (20s).'));
+    }, 20_000);
   });
 }
 

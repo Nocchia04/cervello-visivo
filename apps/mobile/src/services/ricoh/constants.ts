@@ -27,7 +27,7 @@ export const COMMAND_STATUS = {
 } as const;
 
 export const POLLING_INTERVAL_MS = 500;
-export const MAX_POLL_ATTEMPTS = 60; // 30 seconds max
+export const MAX_POLL_ATTEMPTS = 120; // 60 seconds max
 
 /**
  * Mappa codici errore camera (campo _cameraError in OscState) → messaggi italiano.

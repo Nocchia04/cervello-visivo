@@ -30,6 +30,14 @@ interface EmbeddedViewer360Props {
   currentIndex: number;
   onIndexChange: (index: number) => void;
   hideTimeTravelPanel?: boolean;
+  /** Hide the built-in note button (parent controls it externally) */
+  hideNoteButton?: boolean;
+  /** Externally controlled adding-note mode */
+  addingNoteExternal?: boolean;
+  /** Callback when external note mode changes (toggle from inside) */
+  onAddingNoteChange?: (adding: boolean) => void;
+  /** Annotation count callback so parent can display count */
+  onAnnotationCount?: (count: number) => void;
 }
 
 export default function EmbeddedViewer360({
@@ -37,6 +45,10 @@ export default function EmbeddedViewer360({
   currentIndex,
   onIndexChange,
   hideTimeTravelPanel,
+  hideNoteButton,
+  addingNoteExternal,
+  onAddingNoteChange,
+  onAnnotationCount,
 }: EmbeddedViewer360Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -144,6 +156,19 @@ export default function EmbeddedViewer360({
   });
 
   const annotations: Annotazione[] = annotData?.annotazioni ?? [];
+
+  // Sync external addingNote control
+  useEffect(() => {
+    if (addingNoteExternal !== undefined && addingNoteExternal !== addingNote) {
+      setAddingNote(addingNoteExternal);
+      if (!addingNoteExternal) { setPendingNote(null); setNoteText(""); }
+    }
+  }, [addingNoteExternal]);
+
+  // Report annotation count to parent
+  useEffect(() => {
+    onAnnotationCount?.(annotations.length);
+  }, [annotations.length, onAnnotationCount]);
 
   useEffect(() => {
     annotationsRef.current = annotations;
@@ -563,20 +588,27 @@ export default function EmbeddedViewer360({
       )}
 
       {/* ── Add note button (top right) ───────────────────────────────────── */}
-      <button
-        onClick={() => { setAddingNote(!addingNote); if (addingNote) { setPendingNote(null); setNoteText(""); } }}
-        style={{
-          position: "absolute", top: 14, right: 14, zIndex: 20,
-          background: addingNote ? "#6366f1" : "rgba(0,0,0,0.55)",
-          border: "none", borderRadius: 999, padding: "7px 14px",
-          color: "#fff", fontSize: 12, fontWeight: 600,
-          display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
-          backdropFilter: "blur(8px)",
-        }}
-      >
-        <MapPin className="w-3.5 h-3.5" />
-        {addingNote ? "Annulla" : `Note${annotations.length > 0 ? ` (${annotations.length})` : ""}`}
-      </button>
+      {!hideNoteButton && (
+        <button
+          onClick={() => {
+            const next = !addingNote;
+            setAddingNote(next);
+            if (!next) { setPendingNote(null); setNoteText(""); }
+            onAddingNoteChange?.(next);
+          }}
+          style={{
+            position: "absolute", top: 14, right: 14, zIndex: 20,
+            background: addingNote ? "#6366f1" : "rgba(0,0,0,0.55)",
+            border: "none", borderRadius: 999, padding: "7px 14px",
+            color: "#fff", fontSize: 12, fontWeight: 600,
+            display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <MapPin className="w-3.5 h-3.5" />
+          {addingNote ? "Annulla" : `Note${annotations.length > 0 ? ` (${annotations.length})` : ""}`}
+        </button>
+      )}
 
       {/* ── "Click to place" hint ─────────────────────────────────────────── */}
       {addingNote && !pendingNote && (

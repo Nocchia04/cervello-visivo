@@ -37,6 +37,6 @@ export const THETA_BLE_CHARACTERISTICS = {
 } as const;
 
 /** Scansione: filtra per nome device salvato in storage (es. "00101234") */
-export const BLE_SCAN_TIMEOUT_MS = 15_000;
+export const BLE_SCAN_TIMEOUT_MS = 30_000;
 /** Timeout scatto: SC2 può impiegare fino a 10-15s */
-export const BLE_TAKE_PICTURE_TIMEOUT_MS = 35_000;
+export const BLE_TAKE_PICTURE_TIMEOUT_MS = 60_000;

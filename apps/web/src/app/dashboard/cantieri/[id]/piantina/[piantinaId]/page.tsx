@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   Check,
+  MapPin,
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -368,6 +369,8 @@ export default function PiantinaPage() {
   const [minimapCollapsed, setMinimapCollapsed] = useState(false);
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const [compareDateDropdownOpen, setCompareDateDropdownOpen] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
+  const [annotationCount, setAnnotationCount] = useState(0);
 
   // ── Compare rotation sync refs ─────────────────────────────────────────────
   const leftViewerRef = useRef<SyncedViewer360Handle>(null);
@@ -562,7 +565,7 @@ export default function PiantinaPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center" style={{ height: "calc(100vh - 80px)" }}>
+      <div className="flex items-center justify-center" style={{ height: "100vh", margin: "-40px", background: "#000" }}>
         <div
           className="animate-spin rounded-full h-8 w-8 border-b-2"
           style={{ borderColor: "var(--accent)" }}
@@ -583,11 +586,11 @@ export default function PiantinaPage() {
     <div
       style={{
         position: "relative",
-        height: "calc(100vh - 80px)",
-        width: "100%",
+        height: "100vh",
+        width: "calc(100% + 80px)",
         overflow: "hidden",
         background: "#000",
-        borderRadius: 16,
+        margin: "-40px -40px -40px -40px",
       }}
     >
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -601,6 +604,10 @@ export default function PiantinaPage() {
             currentIndex={selectedFotoIndex}
             onIndexChange={setSelectedFotoIndex}
             hideTimeTravelPanel
+            hideNoteButton
+            addingNoteExternal={addingNote}
+            onAddingNoteChange={setAddingNote}
+            onAnnotationCount={setAnnotationCount}
           />
         </div>
       )}
@@ -731,16 +738,14 @@ export default function PiantinaPage() {
       <div
         style={{
           position: "absolute",
-          top: 16,
-          left: 16,
+          top: 12,
+          left: 12,
           zIndex: 30,
-          width: 280,
+          width: 220,
           background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
-          borderRadius: 14,
-          border: "1px solid var(--border)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-          overflow: "hidden",
+          borderRadius: 10,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
         }}
       >
         {/* Minimap header */}
@@ -749,10 +754,12 @@ export default function PiantinaPage() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "8px 12px",
+            padding: "6px 10px",
             borderBottom: minimapCollapsed
               ? "none"
               : "1px solid var(--border)",
+            borderRadius: minimapCollapsed ? 10 : "10px 10px 0 0",
+            background: "rgba(255,255,255,0.95)",
           }}
         >
           <Link
@@ -763,7 +770,7 @@ export default function PiantinaPage() {
               gap: 6,
               color: "var(--text)",
               textDecoration: "none",
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: 600,
             }}
           >
@@ -795,7 +802,7 @@ export default function PiantinaPage() {
             {/* Piantina minimap */}
             <div
               style={{
-                maxHeight: 200,
+                maxHeight: 150,
                 overflow: "hidden",
                 borderBottom: "1px solid var(--border)",
               }}
@@ -816,13 +823,13 @@ export default function PiantinaPage() {
 
             {/* Selected punto info + date dropdown */}
             {selectedPunto && (
-              <div style={{ padding: "10px 12px" }}>
+              <div style={{ padding: "6px 10px", borderRadius: "0 0 10px 10px", background: "rgba(255,255,255,0.95)" }}>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: 700,
                     color: "var(--text)",
-                    marginBottom: 6,
+                    marginBottom: 4,
                   }}
                 >
                   {selectedPunto.nome}
@@ -859,14 +866,39 @@ export default function PiantinaPage() {
       <div
         style={{
           position: "absolute",
-          top: 16,
-          right: 16,
+          top: 12,
+          right: 12,
           zIndex: 30,
           display: "flex",
           gap: 8,
           alignItems: "flex-start",
         }}
       >
+        {/* Note button */}
+        {hasCurrentFoto && !isCompareSplit && (
+          <button
+            onClick={() => setAddingNote(!addingNote)}
+            style={{
+              background: addingNote ? "#6366f1" : "rgba(0,0,0,0.6)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 999,
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              cursor: "pointer",
+              backdropFilter: "blur(8px)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <MapPin className="w-4 h-4" />
+            {addingNote ? "Annulla" : `Note${annotationCount > 0 ? ` (${annotationCount})` : ""}`}
+          </button>
+        )}
+
         {/* Confronta button */}
         <button
           onClick={handleToggleCompare}
