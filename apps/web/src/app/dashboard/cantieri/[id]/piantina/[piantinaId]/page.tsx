@@ -761,7 +761,7 @@ export default function PiantinaPage() {
           top: 12,
           left: 12,
           zIndex: 30,
-          width: 220,
+          width: 260,
           background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
           borderRadius: 10,
@@ -819,12 +819,14 @@ export default function PiantinaPage() {
 
         {!minimapCollapsed && (
           <>
-            {/* Piantina minimap */}
+            {/* Piantina minimap — always square */}
             <div
               style={{
-                maxHeight: 150,
+                width: "100%",
+                aspectRatio: "1 / 1",
                 overflow: "hidden",
                 borderBottom: "1px solid var(--border)",
+                position: "relative",
               }}
             >
               <PiantinaCanvas

@@ -163,7 +163,12 @@ export default function PiantinaCanvas({
     <div
       ref={containerRef}
       className="relative overflow-hidden rounded-xl"
-      style={{ aspectRatio: `${larghezza} / ${altezza}`, background: "var(--surface)" }}
+      style={{
+        ...(leftClickPans
+          ? { width: "100%", height: "100%", position: "absolute" as const, inset: 0 }
+          : { aspectRatio: `${larghezza} / ${altezza}` }),
+        background: "var(--surface)",
+      }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -209,8 +214,8 @@ export default function PiantinaCanvas({
         })}
       </div>
 
-      {/* Edit mode toggle */}
-      <div className="absolute top-3 left-3">
+      {/* Edit mode toggle — hidden in minimap mode */}
+      {!leftClickPans && <div className="absolute top-3 left-3">
         <button
           onClick={() => setIsEditMode((prev) => !prev)}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
@@ -228,10 +233,10 @@ export default function PiantinaCanvas({
           )}
           {isEditMode ? "Fine" : "Modifica"}
         </button>
-      </div>
+      </div>}
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-3 right-3 flex flex-col gap-1">
+      {/* Zoom controls — hidden in minimap mode */}
+      {!leftClickPans && <div className="absolute bottom-3 right-3 flex flex-col gap-1">
         <button
           onClick={() => setScale((s) => Math.min(5, s * 1.2))}
           className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-colors"
@@ -259,7 +264,7 @@ export default function PiantinaCanvas({
         >
           &minus;
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
