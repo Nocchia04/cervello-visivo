@@ -106,11 +106,11 @@ model Foto360 {
   is360            Boolean  @default(true)
   timestamp        DateTime @default(now())
   metadata         Json?
-  uploadedById     String
+  uploadedById     String?
   createdAt        DateTime @default(now())
 
   puntoDiScatto PuntoDiScatto @relation(fields: [puntoDiScattoId], references: [id], onDelete: Cascade)
-  uploadedBy    User          @relation(fields: [uploadedById], references: [id])
+  uploadedBy    User?         @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   annotazioni   Annotazione[]
 
   @@map("foto_360")
@@ -122,11 +122,11 @@ model Annotazione {
   testo     String
   x         Float
   y         Float
-  autoreId  String
+  autoreId  String?
   createdAt DateTime @default(now())
 
   foto360 Foto360 @relation(fields: [foto360Id], references: [id], onDelete: Cascade)
-  autore  User    @relation(fields: [autoreId], references: [id])
+  autore  User?   @relation(fields: [autoreId], references: [id], onDelete: SetNull)
 
   @@map("annotazioni")
 }

@@ -243,3 +243,28 @@ export const RIMUOVI_OPERATORE_CANTIERE = gql`
     }
   }
 `;
+
+export const ELIMINA_OPERATORE = gql`
+  mutation EliminaOperatore($id: ID!) {
+    eliminaOperatore(id: $id) {
+      id
+    }
+  }
+`;
+
+export const ELIMINA_PUNTO_DI_SCATTO = gql`
+  mutation EliminaPuntoDiScatto($id: ID!) {
+    eliminaPuntoDiScatto(id: $id) {
+      id
+    }
+  }
+`;
+
+export const RINOMINA_PIANTINA = gql`
+  mutation RinominaPiantina($id: ID!, $nome: String!) {
+    rinominaPiantina(id: $id, nome: $nome) {
+      id
+      nome
+    }
+  }
+`;

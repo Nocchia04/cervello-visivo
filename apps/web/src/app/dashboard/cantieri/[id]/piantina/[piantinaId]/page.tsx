@@ -13,6 +13,9 @@ import {
   ChevronUp,
   Check,
   MapPin,
+  Trash2,
+  Pencil,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -22,6 +25,8 @@ import {
   AGGIUNGI_PUNTO_DI_SCATTO,
   SPOSTA_PUNTO_DI_SCATTO,
   UPLOAD_FOTO360,
+  ELIMINA_PUNTO_DI_SCATTO,
+  RINOMINA_PUNTO_DI_SCATTO,
 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
@@ -371,6 +376,9 @@ export default function PiantinaPage() {
   const [compareDateDropdownOpen, setCompareDateDropdownOpen] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [annotationCount, setAnnotationCount] = useState(0);
+  const [confirmDeletePuntoId, setConfirmDeletePuntoId] = useState<string | null>(null);
+  const [renamingPunto, setRenamingPunto] = useState(false);
+  const [renamingPuntoValue, setRenamingPuntoValue] = useState("");
 
   // ── Compare rotation sync refs ─────────────────────────────────────────────
   const leftViewerRef = useRef<SyncedViewer360Handle>(null);
@@ -395,6 +403,18 @@ export default function PiantinaPage() {
 
   const [spostaPunto] = useMutation(SPOSTA_PUNTO_DI_SCATTO, {
     onCompleted: () => refetch(),
+  });
+
+  const [eliminaPunto] = useMutation(ELIMINA_PUNTO_DI_SCATTO, {
+    onCompleted: () => {
+      refetch();
+      if (selectedPuntoId === confirmDeletePuntoId) setSelectedPuntoId(null);
+      setConfirmDeletePuntoId(null);
+    },
+  });
+
+  const [rinominaPunto] = useMutation(RINOMINA_PUNTO_DI_SCATTO, {
+    onCompleted: () => { refetch(); setRenamingPunto(false); },
   });
 
   const piantina = data?.piantina;
@@ -826,22 +846,92 @@ export default function PiantinaPage() {
               <div style={{ padding: "6px 10px", borderRadius: "0 0 10px 10px", background: "rgba(255,255,255,0.95)" }}>
                 <div
                   style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "var(--text)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
                     marginBottom: 4,
                   }}
                 >
-                  {selectedPunto.nome}
-                  <span
-                    style={{
-                      fontWeight: 400,
-                      color: "var(--text-muted)",
-                      marginLeft: 6,
-                    }}
-                  >
-                    {selectedPunto.foto360.length} foto
-                  </span>
+                  {renamingPunto ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1 }}>
+                      <input
+                        style={{
+                          flex: 1,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          border: "1px solid var(--border)",
+                          borderRadius: 4,
+                          padding: "1px 4px",
+                          outline: "none",
+                          minWidth: 0,
+                        }}
+                        value={renamingPuntoValue}
+                        onChange={(e) => setRenamingPuntoValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && renamingPuntoValue.trim()) {
+                            rinominaPunto({ variables: { id: selectedPunto.id, nome: renamingPuntoValue.trim() } });
+                          }
+                          if (e.key === "Escape") setRenamingPunto(false);
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => { if (renamingPuntoValue.trim()) rinominaPunto({ variables: { id: selectedPunto.id, nome: renamingPuntoValue.trim() } }); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                      >
+                        <Check className="w-3 h-3" style={{ color: "#22c55e" }} />
+                      </button>
+                      <button
+                        onClick={() => setRenamingPunto(false)}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                      >
+                        <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
+                        {selectedPunto.nome}
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+                        {selectedPunto.foto360.length} foto
+                      </span>
+                      <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+                        <button
+                          onClick={() => { setRenamingPunto(true); setRenamingPuntoValue(selectedPunto.nome); }}
+                          title="Rinomina punto"
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                        >
+                          <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                        </button>
+                        {confirmDeletePuntoId === selectedPunto.id ? (
+                          <>
+                            <button
+                              onClick={() => eliminaPunto({ variables: { id: selectedPunto.id } })}
+                              title="Conferma eliminazione"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                            >
+                              <Check className="w-3 h-3" style={{ color: "var(--danger, #ef4444)" }} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeletePuntoId(null)}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                            >
+                              <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeletePuntoId(selectedPunto.id)}
+                            title="Elimina punto"
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                          >
+                            <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
                 {selectedFotoSorted.length > 0 && (
                   <DateDropdown

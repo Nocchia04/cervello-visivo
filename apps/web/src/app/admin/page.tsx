@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
-import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX } from "lucide-react";
+import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2 } from "lucide-react";
 import { GET_UTENTI, GET_CANTIERI } from "@/graphql/queries";
-import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE } from "@/graphql/mutations";
+import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE } from "@/graphql/mutations";
 
 interface CantiereAssegnato {
   id: string;
@@ -177,7 +177,8 @@ function CantiereRow({
 export default function AdminPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [mutatingId, setMutatingId] = useState<string | null>(null); // cantiereId in mutation
+  const [mutatingId, setMutatingId] = useState<string | null>(null);
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
 
   const { data: utentiData, loading: utentiLoading, refetch: refetchUtenti } = useQuery(GET_UTENTI);
   const { data: cantieriData } = useQuery(GET_CANTIERI, { variables: { includiArchiviati: false } });
@@ -189,6 +190,10 @@ export default function AdminPage() {
   const [rimuovi] = useMutation(RIMUOVI_OPERATORE_CANTIERE, {
     onCompleted: () => { refetchUtenti(); setMutatingId(null); },
     onError: () => setMutatingId(null),
+  });
+  const [eliminaOp, { loading: eliminaLoading }] = useMutation(ELIMINA_OPERATORE, {
+    onCompleted: () => { refetchUtenti(); setSelectedUserId(null); setConfirmDeleteUserId(null); },
+    onError: () => setConfirmDeleteUserId(null),
   });
 
   const utenti: User[] = utentiData?.utenti ?? [];
@@ -356,13 +361,42 @@ export default function AdminPage() {
                   <p className="font-semibold">{selectedUser.nome} {selectedUser.cognome}</p>
                   <p className="text-xs" style={{ color: "var(--text-muted)" }}>{selectedUser.email}</p>
                 </div>
-                <div className="ml-auto text-right">
-                  <p className="text-2xl font-bold" style={{ color: assignedIds.size > 0 ? "#16a34a" : "var(--text-muted)" }}>
-                    {assignedIds.size}
-                  </p>
-                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    {assignedIds.size === 1 ? "cantiere" : "cantieri"} assegnati
-                  </p>
+                <div className="ml-auto flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-2xl font-bold" style={{ color: assignedIds.size > 0 ? "#16a34a" : "var(--text-muted)" }}>
+                      {assignedIds.size}
+                    </p>
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      {assignedIds.size === 1 ? "cantiere" : "cantieri"} assegnati
+                    </p>
+                  </div>
+                  {confirmDeleteUserId === selectedUser.id ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => eliminaOp({ variables: { id: selectedUser.id } })}
+                        disabled={eliminaLoading}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg"
+                        style={{ background: "var(--danger)", color: "#fff" }}
+                      >
+                        {eliminaLoading ? "..." : "Conferma"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteUserId(null)}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg btn-ghost"
+                      >
+                        Annulla
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDeleteUserId(selectedUser.id)}
+                      className="btn-ghost p-2"
+                      title="Elimina operatore"
+                      style={{ color: "var(--danger)" }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 

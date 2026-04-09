@@ -48,4 +48,6 @@ extend type Mutation {
     y: Float!
   ): PuntoDiScatto!
   rinominaPuntoDiScatto(id: ID!, nome: String!): PuntoDiScatto!
+  eliminaPuntoDiScatto(id: ID!): PuntoDiScatto!
+  rinominaPiantina(id: ID!, nome: String!): Piantina!
 }

@@ -34,4 +34,5 @@ type Mutation {
     role: UserRole
   ): AuthPayload!
   creaOperatore(email: String!, password: String!, nome: String!, cognome: String!): AuthPayload!
+  eliminaOperatore(id: ID!): User!
 }

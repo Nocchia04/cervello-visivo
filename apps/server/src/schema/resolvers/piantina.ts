@@ -148,6 +148,48 @@ export const piantinaResolvers = {
         data: { nome: args.nome.trim() },
       });
     },
+
+    eliminaPuntoDiScatto: async (
+      _parent: unknown,
+      args: { id: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+
+      const punto = await ctx.prisma.puntoDiScatto.findUnique({
+        where: { id: args.id },
+      });
+      if (!punto) {
+        throw new GraphQLError("Punto di scatto non trovato", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      // Cascade: Prisma schema has onDelete: Cascade for Foto360 → Annotazione
+      return ctx.prisma.puntoDiScatto.delete({ where: { id: args.id } });
+    },
+
+    rinominaPiantina: async (
+      _parent: unknown,
+      args: { id: string; nome: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+
+      const piantina = await ctx.prisma.piantina.findUnique({
+        where: { id: args.id },
+      });
+      if (!piantina) {
+        throw new GraphQLError("Piantina non trovata", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      return ctx.prisma.piantina.update({
+        where: { id: args.id },
+        data: { nome: args.nome.trim() },
+      });
+    },
   },
 
   Piantina: {

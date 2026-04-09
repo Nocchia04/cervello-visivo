@@ -20,6 +20,7 @@ import {
   ARCHIVIA_CANTIERE,
   RIATTIVA_CANTIERE,
   CARICA_PIANTINA,
+  RINOMINA_PIANTINA,
 } from "@/graphql/mutations";
 import CantiereBadge from "@/components/cantiere/CantiereBadge";
 import { StatoCantiere } from "@cervello-visivo/shared";
@@ -236,6 +237,8 @@ export default function CantiereDettaglioPage() {
   const [editNome, setEditNome] = useState("");
   const [editIndirizzo, setEditIndirizzo] = useState("");
   const [showCaricaModal, setShowCaricaModal] = useState(false);
+  const [renamingPiantinaId, setRenamingPiantinaId] = useState<string | null>(null);
+  const [renamingPiantinaValue, setRenamingPiantinaValue] = useState("");
 
   const { data, loading, refetch } = useQuery(GET_CANTIERE, {
     variables: { id: cantiereId },
@@ -249,6 +252,9 @@ export default function CantiereDettaglioPage() {
   });
   const [riattiva] = useMutation(RIATTIVA_CANTIERE, {
     onCompleted: () => refetch(),
+  });
+  const [rinominaPiantina] = useMutation(RINOMINA_PIANTINA, {
+    onCompleted: () => { refetch(); setRenamingPiantinaId(null); },
   });
 
   const cantiere = data?.cantiere;
@@ -422,7 +428,7 @@ export default function CantiereDettaglioPage() {
                   href={`/dashboard/cantieri/${cantiereId}/piantina/${piantina.id}`}
                 >
                   <div
-                    className="card p-0 overflow-hidden cursor-pointer transition-all duration-200"
+                    className="card p-0 overflow-hidden cursor-pointer transition-all duration-200 group"
                     onMouseEnter={(e) => {
                       (e.currentTarget as HTMLDivElement).style.borderColor =
                         "var(--accent)";
@@ -447,7 +453,46 @@ export default function CantiereDettaglioPage() {
                       />
                     </div>
                     <div className="p-4">
-                      <h3 className="font-medium">{piantina.nome}</h3>
+                      {renamingPiantinaId === piantina.id ? (
+                        <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                          <input
+                            className="input-field text-sm font-medium py-1 px-2 h-7 flex-1 min-w-0"
+                            value={renamingPiantinaValue}
+                            onChange={(e) => setRenamingPiantinaValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && renamingPiantinaValue.trim()) {
+                                rinominaPiantina({ variables: { id: piantina.id, nome: renamingPiantinaValue.trim() } });
+                              }
+                              if (e.key === "Escape") setRenamingPiantinaId(null);
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={(e) => { e.preventDefault(); if (renamingPiantinaValue.trim()) rinominaPiantina({ variables: { id: piantina.id, nome: renamingPiantinaValue.trim() } }); }}
+                            className="btn-ghost p-1"
+                          >
+                            <Pencil className="w-3 h-3" style={{ color: "var(--accent)" }} />
+                          </button>
+                          <button onClick={(e) => { e.preventDefault(); setRenamingPiantinaId(null); }} className="btn-ghost p-1">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-medium">{piantina.nome}</h3>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setRenamingPiantinaId(piantina.id);
+                              setRenamingPiantinaValue(piantina.nome);
+                            }}
+                            className="btn-ghost p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Rinomina piantina"
+                          >
+                            <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                          </button>
+                        </div>
+                      )}
                       <p
                         className="text-xs mt-1"
                         style={{ color: "var(--text-muted)" }}

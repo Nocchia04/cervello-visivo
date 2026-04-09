@@ -101,6 +101,33 @@ export const authResolvers = {
       return { token, user: newUser };
     },
 
+    eliminaOperatore: async (
+      _parent: unknown,
+      args: { id: string },
+      ctx: GraphQLContext
+    ) => {
+      if (!ctx.user || ctx.user.role !== "ADMIN") {
+        throw new GraphQLError("Non autorizzato", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+
+      const user = await ctx.prisma.user.findUnique({ where: { id: args.id } });
+      if (!user) {
+        throw new GraphQLError("Utente non trovato", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      if (user.role === "ADMIN") {
+        throw new GraphQLError("Non puoi eliminare un admin", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+
+      // CantiereUser/Invito cascade delete; Foto360.uploadedBy/Annotazione.autore set null via Prisma onDelete: SetNull
+      return ctx.prisma.user.delete({ where: { id: args.id } });
+    },
+
     register: async (
       _parent: unknown,
       args: {
