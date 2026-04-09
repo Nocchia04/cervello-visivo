@@ -78,7 +78,6 @@ export const foto360Resolvers = {
         },
       });
     },
-  },
 
     eliminaFoto360: async (
       _parent: unknown,
