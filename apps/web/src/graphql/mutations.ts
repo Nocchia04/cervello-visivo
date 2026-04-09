@@ -268,3 +268,11 @@ export const RINOMINA_PIANTINA = gql`
     }
   }
 `;
+
+export const ELIMINA_FOTO360 = gql`
+  mutation EliminaFoto360($id: ID!) {
+    eliminaFoto360(id: $id) {
+      id
+    }
+  }
+`;

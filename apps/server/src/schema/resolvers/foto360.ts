@@ -80,6 +80,25 @@ export const foto360Resolvers = {
     },
   },
 
+    eliminaFoto360: async (
+      _parent: unknown,
+      args: { id: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+
+      const foto = await ctx.prisma.foto360.findUnique({ where: { id: args.id } });
+      if (!foto) {
+        throw new GraphQLError("Foto non trovata", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      // Cascade: Prisma deletes related Annotazioni automatically
+      return ctx.prisma.foto360.delete({ where: { id: args.id } });
+    },
+  },
+
   Foto360: {
     uploadedBy: (
       parent: { uploadedById: string },

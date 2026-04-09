@@ -27,6 +27,7 @@ import {
   UPLOAD_FOTO360,
   ELIMINA_PUNTO_DI_SCATTO,
   RINOMINA_PUNTO_DI_SCATTO,
+  ELIMINA_FOTO360,
 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
@@ -200,13 +201,16 @@ function DateDropdown({
   onSelect,
   open,
   onToggle,
+  onDelete,
 }: {
   fotos: Foto[];
   selectedIndex: number;
   onSelect: (index: number) => void;
   open: boolean;
   onToggle: () => void;
+  onDelete?: (fotoId: string) => void;
 }) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const currentFoto = fotos[selectedIndex];
 
@@ -283,44 +287,40 @@ function DateDropdown({
           }}
         >
           {fotos.map((foto, idx) => (
-            <button
+            <div
               key={foto.id}
-              onClick={() => {
-                onSelect(idx);
-                onToggle();
-              }}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: 4,
                 width: "100%",
-                padding: "8px 10px",
+                padding: "6px 10px",
                 background:
                   idx === selectedIndex ? "var(--surface-hover)" : "transparent",
-                border: "none",
                 borderBottom:
                   idx < fotos.length - 1
                     ? "1px solid var(--border)"
                     : "none",
-                cursor: "pointer",
                 fontSize: 12,
                 color: "var(--text)",
-                textAlign: "left",
-              }}
-              onMouseEnter={(e) => {
-                if (idx !== selectedIndex) {
-                  (e.currentTarget as HTMLButtonElement).style.background =
-                    "var(--surface-hover)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (idx !== selectedIndex) {
-                  (e.currentTarget as HTMLButtonElement).style.background =
-                    "transparent";
-                }
               }}
             >
-              <span style={{ flex: 1 }}>
+              <button
+                onClick={() => {
+                  onSelect(idx);
+                  onToggle();
+                }}
+                style={{
+                  flex: 1,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: "var(--text)",
+                  textAlign: "left",
+                  padding: 0,
+                }}
+              >
                 {safeDate(foto.timestamp).toLocaleDateString("it-IT", {
                   day: "2-digit",
                   month: "short",
@@ -333,11 +333,41 @@ function DateDropdown({
                     minute: "2-digit",
                   })}
                 </span>
-              </span>
+              </button>
               {idx === selectedIndex && (
-                <Check className="w-3.5 h-3.5" style={{ color: "#6366f1" }} />
+                <Check className="w-3 h-3 flex-shrink-0" style={{ color: "#6366f1" }} />
               )}
-            </button>
+              {onDelete && (
+                confirmDeleteId === foto.id ? (
+                  <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDelete(foto.id); setConfirmDeleteId(null); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                      title="Conferma"
+                    >
+                      <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                      title="Annulla"
+                    >
+                      <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(foto.id); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
+                    title="Elimina foto"
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
+                  >
+                    <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
+                  </button>
+                )
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -356,11 +386,9 @@ export default function PiantinaPage() {
   const [selectedPuntoId, setSelectedPuntoId] = useState<string | null>(null);
   const [selectedFotoIndex, setSelectedFotoIndex] = useState(0);
 
-  // ── Compare mode ───────────────────────────────────────────────────────────
+  // ── Compare mode (same punto, two dates) ───────────────────────────────────
   const [compareMode, setCompareMode] = useState(false);
-  const [comparePuntoId, setComparePuntoId] = useState<string | null>(null);
   const [compareFotoIndex, setCompareFotoIndex] = useState(0);
-  const [selectingCompare, setSelectingCompare] = useState(false);
 
   // ── Add punto flow ─────────────────────────────────────────────────────────
   const [addingPunto, setAddingPunto] = useState(false);
@@ -417,6 +445,14 @@ export default function PiantinaPage() {
     onCompleted: () => { refetch(); setRenamingPunto(false); },
   });
 
+  const [eliminaFoto] = useMutation(ELIMINA_FOTO360, {
+    onCompleted: () => refetch(),
+  });
+
+  const handleDeleteFoto = useCallback((fotoId: string) => {
+    eliminaFoto({ variables: { id: fotoId } });
+  }, [eliminaFoto]);
+
   const piantina = data?.piantina;
   const puntiDiScatto: Punto[] = piantina?.puntiDiScatto ?? [];
 
@@ -431,18 +467,8 @@ export default function PiantinaPage() {
     [selectedPunto]
   );
 
-  const comparePunto = useMemo(
-    () => puntiDiScatto.find((p) => p.id === comparePuntoId) ?? null,
-    [puntiDiScatto, comparePuntoId]
-  );
-
-  const compareFotoSorted = useMemo(
-    () => (comparePunto ? sortFotoDesc(comparePunto.foto360) : []),
-    [comparePunto]
-  );
-
   const currentFoto = selectedFotoSorted[selectedFotoIndex] ?? null;
-  const currentCompareFoto = compareFotoSorted[compareFotoIndex] ?? null;
+  const currentCompareFoto = selectedFotoSorted[compareFotoIndex] ?? null;
 
   // ── Auto-select on open: find punto with most recent foto360 ──────────────
   useEffect(() => {
@@ -485,24 +511,6 @@ export default function PiantinaPage() {
 
   const handlePuntoClick = useCallback(
     (puntoId: string) => {
-      // If in compare-selecting mode, set compare punto
-      if (selectingCompare) {
-        const punto = puntiDiScatto.find((p) => p.id === puntoId);
-        if (punto && punto.foto360.length > 0) {
-          setComparePuntoId(puntoId);
-          // Find closest date to current foto
-          if (currentFoto) {
-            const sorted = sortFotoDesc(punto.foto360);
-            const idx = findClosestFotoIndex(sorted, currentFoto.timestamp);
-            setCompareFotoIndex(idx >= 0 ? idx : 0);
-          } else {
-            setCompareFotoIndex(0);
-          }
-        }
-        setSelectingCompare(false);
-        return;
-      }
-
       // If adding punto, cancel and select instead
       if (addingPunto) {
         setAddingPunto(false);
@@ -520,14 +528,16 @@ export default function PiantinaPage() {
           setSelectedFotoIndex(0);
         }
         setSelectedPuntoId(puntoId);
+        // Reset compare index when switching punto
+        if (compareMode) setCompareFotoIndex(Math.min(1, (punto?.foto360.length ?? 1) - 1));
       }
     },
     [
-      selectingCompare,
       addingPunto,
       selectedPuntoId,
       currentFoto,
       puntiDiScatto,
+      compareMode,
     ]
   );
 
@@ -552,16 +562,12 @@ export default function PiantinaPage() {
 
   const handleToggleCompare = () => {
     if (compareMode) {
-      // Exit compare mode
       setCompareMode(false);
-      setComparePuntoId(null);
       setCompareFotoIndex(0);
-      setSelectingCompare(false);
     } else {
-      // Enter compare mode — ask user to click a punto
+      // Enter compare mode — second date defaults to next available
       setCompareMode(true);
-      setSelectingCompare(true);
-      setComparePuntoId(null);
+      setCompareFotoIndex(selectedFotoSorted.length > 1 ? 1 : 0);
     }
   };
 
@@ -599,7 +605,7 @@ export default function PiantinaPage() {
   }
 
   // ── Determine if we're in compare split view ───────────────────────────────
-  const isCompareSplit = compareMode && comparePuntoId && currentCompareFoto;
+  const isCompareSplit = compareMode && currentFoto && currentCompareFoto;
   const hasCurrentFoto = !!currentFoto;
 
   return (
@@ -674,6 +680,7 @@ export default function PiantinaPage() {
                 onSelect={setSelectedFotoIndex}
                 open={dateDropdownOpen}
                 onToggle={() => setDateDropdownOpen(!dateDropdownOpen)}
+                onDelete={handleDeleteFoto}
               />
             </div>
           </div>
@@ -702,16 +709,17 @@ export default function PiantinaPage() {
               }}
             >
               <div style={{ fontWeight: 700, marginBottom: 2 }}>
-                {comparePunto?.nome}
+                {selectedPunto?.nome}
               </div>
               <DateDropdown
-                fotos={compareFotoSorted}
+                fotos={selectedFotoSorted}
                 selectedIndex={compareFotoIndex}
                 onSelect={setCompareFotoIndex}
                 open={compareDateDropdownOpen}
                 onToggle={() =>
                   setCompareDateDropdownOpen(!compareDateDropdownOpen)
                 }
+                onDelete={handleDeleteFoto}
               />
             </div>
           </div>
@@ -994,7 +1002,7 @@ export default function PiantinaPage() {
         {/* Confronta button */}
         <button
           onClick={handleToggleCompare}
-          disabled={!hasCurrentFoto}
+          disabled={selectedFotoSorted.length < 2}
           style={{
             background: compareMode ? "#6366f1" : "rgba(0,0,0,0.6)",
             color: "#fff",
@@ -1006,9 +1014,9 @@ export default function PiantinaPage() {
             display: "flex",
             alignItems: "center",
             gap: 6,
-            cursor: hasCurrentFoto ? "pointer" : "not-allowed",
+            cursor: selectedFotoSorted.length >= 2 ? "pointer" : "not-allowed",
             backdropFilter: "blur(8px)",
-            opacity: hasCurrentFoto ? 1 : 0.4,
+            opacity: selectedFotoSorted.length >= 2 ? 1 : 0.4,
             whiteSpace: "nowrap",
           }}
         >
@@ -1021,12 +1029,8 @@ export default function PiantinaPage() {
           onClick={() => {
             setAddingPunto(!addingPunto);
             setPendingCoords(null);
-            if (addingPunto) {
-              // Cancel
-            } else {
+            if (!addingPunto) {
               setCompareMode(false);
-              setSelectingCompare(false);
-              setComparePuntoId(null);
             }
           }}
           style={{
@@ -1061,8 +1065,8 @@ export default function PiantinaPage() {
           Hint banners — centered top
           ═══════════════════════════════════════════════════════════════════ */}
 
-      {/* Compare selecting hint */}
-      {selectingCompare && (
+      {/* Compare mode needs at least 2 photos hint */}
+      {compareMode && selectedFotoSorted.length < 2 && (
         <div
           style={{
             position: "absolute",
@@ -1070,39 +1074,17 @@ export default function PiantinaPage() {
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 40,
-            background: "rgba(99,102,241,0.9)",
+            background: "rgba(239,68,68,0.9)",
             backdropFilter: "blur(8px)",
             borderRadius: 999,
             padding: "8px 20px",
             color: "#fff",
             fontSize: 13,
             fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
             whiteSpace: "nowrap",
           }}
         >
-          <Columns2 className="w-4 h-4" />
-          Clicca un punto sulla piantina per confrontare
-          <button
-            onClick={() => {
-              setSelectingCompare(false);
-              setCompareMode(false);
-            }}
-            style={{
-              background: "rgba(255,255,255,0.2)",
-              border: "none",
-              borderRadius: 999,
-              padding: "2px 8px",
-              color: "#fff",
-              fontSize: 11,
-              cursor: "pointer",
-              marginLeft: 4,
-            }}
-          >
-            Annulla
-          </button>
+          Servono almeno 2 foto per confrontare
         </div>
       )}
 
