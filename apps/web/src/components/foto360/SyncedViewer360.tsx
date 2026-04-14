@@ -96,6 +96,9 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       materialRef.current = material;
       scene.add(new THREE.Mesh(geometry, material));
 
+      // Load initial texture — URL prop effect runs before init, so we must trigger load here too
+      loadTexture(url);
+
       const animate = () => {
         rafRef.current = requestAnimationFrame(animate);
         const phi = THREE.MathUtils.degToRad(90 - latRef.current);

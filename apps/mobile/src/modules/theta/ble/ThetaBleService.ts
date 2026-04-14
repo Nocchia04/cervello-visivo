@@ -116,13 +116,40 @@ function scanForDevice(deviceName: string): Promise<Device> {
 async function authenticateDevice(uuid: string): Promise<void> {
   if (!_device) throw new Error('Device non connesso');
   dlog('BLE', `Autenticazione con UUID: ${uuid.substring(0, 8)}...`);
-  // Write UUID string as UTF-8 bytes → base64
   const uuidB64 = btoa(unescape(encodeURIComponent(uuid)));
-  await _device.writeCharacteristicWithResponseForService(
-    THETA_BLE_SERVICES.BLUETOOTH_CONTROL,
-    THETA_BLE_CHARACTERISTICS.AUTH_BLUETOOTH_DEVICE,
-    uuidB64
-  );
+
+  // Retry: some models (THETA V) need a short delay after service discovery
+  // and may require writeWithoutResponse instead of writeWithResponse
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (attempt <= 2) {
+        dlog('BLE', `Auth write (withResponse) tentativo ${attempt}...`);
+        await _device.writeCharacteristicWithResponseForService(
+          THETA_BLE_SERVICES.BLUETOOTH_CONTROL,
+          THETA_BLE_CHARACTERISTICS.AUTH_BLUETOOTH_DEVICE,
+          uuidB64
+        );
+      } else {
+        // Fallback: writeWithoutResponse (some cameras don't support response mode on this char)
+        dlog('BLE', 'Auth write (withoutResponse) fallback...');
+        await _device.writeCharacteristicWithoutResponseForService(
+          THETA_BLE_SERVICES.BLUETOOTH_CONTROL,
+          THETA_BLE_CHARACTERISTICS.AUTH_BLUETOOTH_DEVICE,
+          uuidB64
+        );
+      }
+      dlog('BLE', 'Auth write OK');
+      return;
+    } catch (err: any) {
+      dlog('BLE', `Auth write tentativo ${attempt} fallito: ${err.message}`);
+      if (attempt < 3) {
+        // Wait before retry — gives the camera time to stabilize BLE
+        await new Promise((r) => setTimeout(r, 1500));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -166,6 +193,8 @@ async function _connectAndAuth(device: Device, bleUuid: string): Promise<string>
   await connected.discoverAllServicesAndCharacteristics();
   _device = connected;
   dlog('BLE', `Services discovered. MTU: ${connected.mtu}`);
+  // Small delay after discovery — some cameras (THETA V) need time to stabilize
+  await new Promise((r) => setTimeout(r, 500));
 
   connected.onDisconnected((err) => {
     dlog('BLE', `Disconnesso${err ? `: ${err.message}` : ' (pulito)'}`);

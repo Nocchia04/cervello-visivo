@@ -182,7 +182,7 @@ export default function ImpostazioniScreen() {
       setSetupStep('ble_connecting');
       // Attendi che il BT della camera si attivi dopo il comando setOptions.
       // La SC2 impiega ~5s. Mostriamo un countdown per dare feedback visivo.
-      for (let remaining = 5; remaining > 0; remaining--) {
+      for (let remaining = 8; remaining > 0; remaining--) {
         setSetupStatusMsg(`Attivazione Bluetooth camera... ${remaining}s`);
         await new Promise((r) => setTimeout(r, 1000));
       }
