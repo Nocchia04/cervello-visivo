@@ -203,6 +203,7 @@ function DateDropdown({
   open,
   onToggle,
   onDelete,
+  openUpward,
 }: {
   fotos: Foto[];
   selectedIndex: number;
@@ -210,6 +211,7 @@ function DateDropdown({
   open: boolean;
   onToggle: () => void;
   onDelete?: (fotoId: string) => void;
+  openUpward?: boolean;
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -277,10 +279,11 @@ function DateDropdown({
         <div
           style={{
             position: "absolute",
-            top: "100%",
+            ...(openUpward
+              ? { bottom: "100%", marginBottom: 4 }
+              : { top: "100%", marginTop: 4 }),
             left: 0,
             right: 0,
-            marginTop: 4,
             background: "rgba(255,255,255,0.98)",
             backdropFilter: "blur(12px)",
             border: "1px solid var(--border)",
@@ -690,6 +693,7 @@ export default function PiantinaPage() {
                 open={dateDropdownOpen}
                 onToggle={() => setDateDropdownOpen(!dateDropdownOpen)}
                 onDelete={handleDeleteFoto}
+                openUpward
               />
             </div>
           </div>
@@ -729,6 +733,7 @@ export default function PiantinaPage() {
                   setCompareDateDropdownOpen(!compareDateDropdownOpen)
                 }
                 onDelete={handleDeleteFoto}
+                openUpward
               />
             </div>
           </div>
