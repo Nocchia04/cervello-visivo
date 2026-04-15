@@ -197,21 +197,33 @@ export async function connectByPeripheralId(peripheralId: string, bleUuid: strin
 async function _connectAndAuth(device: Device, bleUuid: string): Promise<string> {
   dlog('BLE', `Connessione a device ${device.id}...`);
   const connected = await device.connect({ autoConnect: false });
-  dlog('BLE', 'Connesso. Discovering services...');
-  await connected.discoverAllServicesAndCharacteristics();
-  _device = connected;
-  dlog('BLE', `Services discovered. MTU: ${connected.mtu}`);
+  dlog('BLE', `Connesso. MTU iniziale: ${connected.mtu}. Richiedo MTU 247...`);
+
+  // CRITICAL: Request larger MTU so we can write the 36-byte UUID in one packet.
+  // Default MTU is 23 (20 usable bytes) which truncates writes silently.
+  let mtuNegotiated = connected;
+  try {
+    mtuNegotiated = await connected.requestMTU(247);
+    dlog('BLE', `MTU negoziato: ${mtuNegotiated.mtu}`);
+  } catch (e: any) {
+    dlog('BLE', `requestMTU fallito (iOS o camera non supporta): ${e.message} — procedo con MTU default`);
+  }
+
+  dlog('BLE', 'Discovering services...');
+  await mtuNegotiated.discoverAllServicesAndCharacteristics();
+  _device = mtuNegotiated;
+  dlog('BLE', `Services discovered. MTU finale: ${mtuNegotiated.mtu}`);
   // Small delay after discovery — some cameras (THETA V) need time to stabilize
   await new Promise((r) => setTimeout(r, 500));
 
-  connected.onDisconnected((err) => {
+  mtuNegotiated.onDisconnected((err) => {
     dlog('BLE', `Disconnesso${err ? `: ${err.message}` : ' (pulito)'}`);
     _device = null;
   });
 
   await authenticateDevice(bleUuid);
   dlog('BLE', 'Autenticato OK');
-  return connected.id;
+  return mtuNegotiated.id;
 }
 
 /** Restituisce l'ID del peripheral BLE connesso (undefined se non connesso) */

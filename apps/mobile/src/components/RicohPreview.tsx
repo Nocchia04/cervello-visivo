@@ -139,10 +139,10 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
       [stopStream, startStream, cleanup]
     );
 
+    // Non avvia più la preview automaticamente: l'utente deve premere il tasto
+    // "Avvia anteprima" per dare il consenso al dialogo WiFi Android.
     useEffect(() => {
-      if (isConnected) {
-        startStream();
-      } else {
+      if (!isConnected) {
         stopStream();
         setError(null);
       }
@@ -180,6 +180,24 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
             }
           }}
         />
+
+        {/* CTA iniziale: preview non ancora avviata */}
+        {!streaming && !error && (
+          <View style={styles.overlay}>
+            <Text style={styles.placeholderIcon}>📷</Text>
+            <Text style={styles.ctaText}>
+              Tocca per avviare l'anteprima live.{"\n"}
+              Apparirà un dialogo Android — conferma "Connetti".
+            </Text>
+            <TouchableOpacity
+              onPress={startStream}
+              style={styles.retryButton}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.retryText}>Avvia anteprima</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Loading spinner — visibile finché non arriva il primo frame */}
         {streaming && !firstFrame && !error && (
@@ -259,6 +277,12 @@ const styles = StyleSheet.create({
   loadingText: {
     ...typography.bodySmall,
     color: colors.textSubtle,
+  },
+  ctaText: {
+    ...typography.bodySmall,
+    color: colors.white,
+    textAlign: "center",
+    lineHeight: 18,
   },
   errorText: {
     ...typography.bodySmall,

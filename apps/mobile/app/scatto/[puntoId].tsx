@@ -142,7 +142,7 @@ export default function ScattoScreen() {
         if (!cancelled) {
           setBleStatus("connected");
           setBleStatusMsg(deviceName ?? "RICOH THETA SC2");
-          loadCameraFiles();
+          // Non chiamiamo loadCameraFiles qui: richiede WiFi che non è ancora connesso
         }
         return;
       }
@@ -156,7 +156,8 @@ export default function ScattoScreen() {
         if (!cancelled) {
           setBleStatus("connected");
           setBleStatusMsg(deviceName);
-          loadCameraFiles();
+          // Non chiamiamo loadCameraFiles qui: richiede WiFi che non è ancora connesso.
+          // Verrà caricato automaticamente dopo lo scatto o quando l'utente avvia la preview.
         }
       } catch (err) {
         if (!cancelled) {
@@ -189,7 +190,6 @@ export default function ScattoScreen() {
       const deviceName = await performBleConnect();
       setBleStatus("connected");
       setBleStatusMsg(deviceName);
-      loadCameraFiles();
     } catch (err) {
       if (err instanceof BleNoSetupError) {
         setBleStatus("no_setup");

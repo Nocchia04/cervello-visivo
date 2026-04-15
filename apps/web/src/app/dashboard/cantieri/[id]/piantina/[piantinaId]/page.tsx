@@ -63,6 +63,7 @@ interface Punto {
 
 interface SyncedViewer360Handle {
   setCamera(lon: number, lat: number): void;
+  getCamera(): { lon: number; lat: number };
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -616,6 +617,27 @@ export default function PiantinaPage() {
     []
   );
 
+  // Toggle lock preserving camera positions on both sides.
+  // Reads current positions, updates state, then restores positions
+  // in the next frames to defend against any re-render side effects.
+  const toggleLockPreservingPositions = useCallback(
+    (side: "left" | "right") => {
+      const leftPos = leftViewerRef.current?.getCamera();
+      const rightPos = rightViewerRef.current?.getCamera();
+      if (side === "left") setLeftLocked((v) => !v);
+      else setRightLocked((v) => !v);
+      const restore = () => {
+        if (leftPos) leftViewerRef.current?.setCamera(leftPos.lon, leftPos.lat);
+        if (rightPos) rightViewerRef.current?.setCamera(rightPos.lon, rightPos.lat);
+      };
+      requestAnimationFrame(() => {
+        restore();
+        requestAnimationFrame(restore);
+      });
+    },
+    []
+  );
+
   // ── Loading state ──────────────────────────────────────────────────────────
 
   if (loading) {
@@ -700,7 +722,7 @@ export default function PiantinaPage() {
             >
               {/* Lock toggle (above label) */}
               <button
-                onClick={() => setLeftLocked(!leftLocked)}
+                onClick={() => toggleLockPreservingPositions("left")}
                 title={leftLocked ? "Sblocca vista sinistra" : "Blocca vista sinistra"}
                 style={{
                   background: leftLocked ? "#6366f1" : "rgba(0,0,0,0.6)",
@@ -771,7 +793,7 @@ export default function PiantinaPage() {
               }}
             >
               <button
-                onClick={() => setRightLocked(!rightLocked)}
+                onClick={() => toggleLockPreservingPositions("right")}
                 title={rightLocked ? "Sblocca vista destra" : "Blocca vista destra"}
                 style={{
                   background: rightLocked ? "#6366f1" : "rgba(0,0,0,0.6)",

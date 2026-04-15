@@ -12,6 +12,7 @@ import * as THREE from "three";
 
 export interface SyncedViewer360Handle {
   setCamera(lon: number, lat: number): void;
+  getCamera(): { lon: number; lat: number };
 }
 
 interface SyncedViewer360Props {
@@ -51,6 +52,9 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       setCamera(lon: number, lat: number) {
         lonRef.current = lon;
         latRef.current = lat;
+      },
+      getCamera() {
+        return { lon: lonRef.current, lat: latRef.current };
       },
     }), []);
 
