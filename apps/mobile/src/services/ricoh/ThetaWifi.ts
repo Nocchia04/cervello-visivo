@@ -104,8 +104,25 @@ export async function connectToCamera(
   }
   await requestWifiPermission();
   dlog('WIFI', 'Permessi OK, connessione...');
-  await ThetaWifiModule.connectToCamera(ssid, password);
-  dlog('WIFI', 'WiFi connesso OK');
+
+  // Retry: Android a volte rate-limita WifiNetworkSpecifier dopo rapidi disconnetti/riconnetti
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await ThetaWifiModule.connectToCamera(ssid, password);
+      dlog('WIFI', `WiFi connesso OK (tentativo ${attempt})`);
+      return;
+    } catch (e: any) {
+      lastError = e;
+      dlog('WIFI', `Tentativo ${attempt} fallito: ${e?.message ?? e}`);
+      if (attempt < 3) {
+        // Disconnect + pausa crescente per evitare rate limiting
+        try { await ThetaWifiModule.disconnectFromCamera(); } catch {}
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
+    }
+  }
+  throw lastError ?? new Error('WiFi connect fallito dopo 3 tentativi');
 }
 
 export async function disconnectFromCamera(): Promise<void> {

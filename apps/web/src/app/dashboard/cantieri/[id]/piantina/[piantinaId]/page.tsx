@@ -618,22 +618,22 @@ export default function PiantinaPage() {
   );
 
   // Toggle lock preserving camera positions on both sides.
-  // Reads current positions, updates state, then restores positions
-  // in the next frames to defend against any re-render side effects.
+  // Continuously re-applies positions for ~250ms to defend against any
+  // delayed re-render side effects that might reset the cameras.
   const toggleLockPreservingPositions = useCallback(
     (side: "left" | "right") => {
       const leftPos = leftViewerRef.current?.getCamera();
       const rightPos = rightViewerRef.current?.getCamera();
       if (side === "left") setLeftLocked((v) => !v);
       else setRightLocked((v) => !v);
-      const restore = () => {
+      if (!leftPos && !rightPos) return;
+      let elapsed = 0;
+      const interval = setInterval(() => {
         if (leftPos) leftViewerRef.current?.setCamera(leftPos.lon, leftPos.lat);
         if (rightPos) rightViewerRef.current?.setCamera(rightPos.lon, rightPos.lat);
-      };
-      requestAnimationFrame(() => {
-        restore();
-        requestAnimationFrame(restore);
-      });
+        elapsed += 16;
+        if (elapsed >= 250) clearInterval(interval);
+      }, 16);
     },
     []
   );

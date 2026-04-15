@@ -138,20 +138,23 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Mouse drag
+    // Drag base — captures lon/lat at mousedown/touchstart so drag is absolute
+    const dragBaseRef = useRef({ lon: 0, lat: 0 });
+
+    // Mouse drag — absolute from mousedown position (avoids drift)
     const onMouseDown = (e: React.MouseEvent) => {
       if (lockedRef.current) return;
       isDraggingRef.current = true;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      dragBaseRef.current = { lon: lonRef.current, lat: latRef.current };
     };
 
     const onMouseMove = (e: React.MouseEvent) => {
       if (!isDraggingRef.current || lockedRef.current) return;
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
-      lonRef.current += dx * 0.3;
-      latRef.current = Math.max(-85, Math.min(85, latRef.current + dy * 0.3));
-      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      lonRef.current = dragBaseRef.current.lon + dx * 0.3;
+      latRef.current = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
       onRotateRef.current?.(lonRef.current, latRef.current);
     };
 
@@ -164,15 +167,15 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
     const onTouchStart = (e: React.TouchEvent) => {
       if (lockedRef.current) return;
       lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      dragBaseRef.current = { lon: lonRef.current, lat: latRef.current };
     };
     const onTouchMove = (e: React.TouchEvent) => {
       if (lockedRef.current) return;
       e.preventDefault();
       const dx = e.touches[0].clientX - lastTouchRef.current.x;
       const dy = e.touches[0].clientY - lastTouchRef.current.y;
-      lonRef.current += dx * 0.3;
-      latRef.current = Math.max(-85, Math.min(85, latRef.current + dy * 0.3));
-      lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lonRef.current = dragBaseRef.current.lon + dx * 0.3;
+      latRef.current = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
       onRotateRef.current?.(lonRef.current, latRef.current);
     };
 
