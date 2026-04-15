@@ -162,7 +162,7 @@ export default function ImpostazioniScreen() {
       if (!deviceName) throw new Error('deviceName non ricevuto dalla camera');
       setSetupStatusMsg(`Device BLE: ${deviceName}. Abilito Bluetooth...`);
 
-      // ── Step 3: Abilita BT sulla camera ──
+      // ── Step 3a: Abilita BT sulla camera ──
       const btRes = await cameraFetch(
         `${CAMERA_URL}/osc/commands/execute`,
         'POST',
@@ -172,6 +172,29 @@ export default function ImpostazioniScreen() {
       const btData = JSON.parse(btRes.body);
       if (btData.state === 'error') {
         throw new Error(`Errore camera: ${btData.error?.message ?? 'abilitazione BT fallita'}`);
+      }
+
+      // ── Step 3b: Imposta _bluetoothRole (necessario per THETA V/Z1/X) ──
+      // La SC2 ignora questa opzione (non la supporta) ma non fallisce.
+      // Senza questo la THETA V resta in modalità Central e non accetta writes BLE.
+      setSetupStatusMsg('Configurazione modalità Bluetooth...');
+      try {
+        const roleRes = await cameraFetch(
+          `${CAMERA_URL}/osc/commands/execute`,
+          'POST',
+          JSON.stringify({ name: 'camera.setOptions', parameters: { options: { _bluetoothRole: 'Central_Peripheral' } } })
+        );
+        // Se il camera non supporta l'opzione, logga ma non fallire
+        if (roleRes.status !== 200) {
+          console.log('_bluetoothRole non supportato (SC2?):', roleRes.status);
+        } else {
+          const roleData = JSON.parse(roleRes.body);
+          if (roleData.state === 'error') {
+            console.log('_bluetoothRole error (ignorato):', roleData.error?.message);
+          }
+        }
+      } catch (e) {
+        console.log('_bluetoothRole eccezione (ignorata):', e);
       }
 
       // ── Step 4: Disconnetti WiFi ──

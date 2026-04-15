@@ -17,10 +17,12 @@ export interface SyncedViewer360Handle {
 interface SyncedViewer360Props {
   url: string;
   onRotate?: (lon: number, lat: number) => void;
+  /** If true, user drag is disabled and the viewer is frozen */
+  locked?: boolean;
 }
 
 const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
-  function SyncedViewer360({ url, onRotate }, ref) {
+  function SyncedViewer360({ url, onRotate, locked }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -32,6 +34,9 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
     const latRef = useRef(0);
     const rafRef = useRef<number>(0);
     const onRotateRef = useRef(onRotate);
+    const lockedRef = useRef(locked);
+
+    useEffect(() => { lockedRef.current = locked; }, [locked]);
 
     const [loading, setLoading] = useState(true);
 
@@ -130,12 +135,13 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
 
     // Mouse drag
     const onMouseDown = (e: React.MouseEvent) => {
+      if (lockedRef.current) return;
       isDraggingRef.current = true;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
     };
 
     const onMouseMove = (e: React.MouseEvent) => {
-      if (!isDraggingRef.current) return;
+      if (!isDraggingRef.current || lockedRef.current) return;
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
       lonRef.current += dx * 0.3;
@@ -151,9 +157,11 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
     // Touch drag
     const lastTouchRef = useRef({ x: 0, y: 0 });
     const onTouchStart = (e: React.TouchEvent) => {
+      if (lockedRef.current) return;
       lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     };
     const onTouchMove = (e: React.TouchEvent) => {
+      if (lockedRef.current) return;
       e.preventDefault();
       const dx = e.touches[0].clientX - lastTouchRef.current.x;
       const dy = e.touches[0].clientY - lastTouchRef.current.y;
@@ -167,7 +175,7 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       <div
         ref={containerRef}
         className="relative w-full h-full overflow-hidden bg-black"
-        style={{ cursor: isDraggingRef.current ? "grabbing" : "grab" }}
+        style={{ cursor: locked ? "not-allowed" : isDraggingRef.current ? "grabbing" : "grab" }}
       >
         <canvas
           ref={canvasRef}

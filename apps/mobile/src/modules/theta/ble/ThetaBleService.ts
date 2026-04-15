@@ -122,6 +122,16 @@ async function authenticateDevice(uuid: string): Promise<void> {
   // and may require writeWithoutResponse instead of writeWithResponse
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      // Verifica connessione prima del write
+      if (!_device) throw new Error('Device disconnesso durante auth');
+      const isConnected = await _device.isConnected().catch(() => false);
+      if (!isConnected) {
+        dlog('BLE', `Device disconnesso al tentativo ${attempt}, riconnessione...`);
+        await _device.connect({ autoConnect: false });
+        await _device.discoverAllServicesAndCharacteristics();
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
       if (attempt <= 2) {
         dlog('BLE', `Auth write (withResponse) tentativo ${attempt}...`);
         await _device.writeCharacteristicWithResponseForService(
@@ -130,7 +140,6 @@ async function authenticateDevice(uuid: string): Promise<void> {
           uuidB64
         );
       } else {
-        // Fallback: writeWithoutResponse (some cameras don't support response mode on this char)
         dlog('BLE', 'Auth write (withoutResponse) fallback...');
         await _device.writeCharacteristicWithoutResponseForService(
           THETA_BLE_SERVICES.BLUETOOTH_CONTROL,
@@ -143,7 +152,6 @@ async function authenticateDevice(uuid: string): Promise<void> {
     } catch (err: any) {
       dlog('BLE', `Auth write tentativo ${attempt} fallito: ${err.message}`);
       if (attempt < 3) {
-        // Wait before retry — gives the camera time to stabilize BLE
         await new Promise((r) => setTimeout(r, 1500));
       } else {
         throw err;

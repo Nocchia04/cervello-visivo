@@ -16,6 +16,8 @@ import {
   Trash2,
   Pencil,
   X,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -204,6 +206,7 @@ function DateDropdown({
   onToggle,
   onDelete,
   openUpward,
+  darkTheme,
 }: {
   fotos: Foto[];
   selectedIndex: number;
@@ -212,6 +215,7 @@ function DateDropdown({
   onToggle: () => void;
   onDelete?: (fotoId: string) => void;
   openUpward?: boolean;
+  darkTheme?: boolean;
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -244,12 +248,12 @@ function DateDropdown({
           width: "100%",
           padding: "8px 10px",
           background: "transparent",
-          border: "1px solid var(--border)",
+          border: darkTheme ? "1px solid rgba(255,255,255,0.2)" : "1px solid var(--border)",
           borderRadius: 10,
           cursor: "pointer",
           fontSize: 12,
           fontWeight: 500,
-          color: "var(--text)",
+          color: darkTheme ? "#fff" : "var(--text)",
         }}
       >
         <span style={{ flex: 1, textAlign: "left" }}>
@@ -399,6 +403,8 @@ export default function PiantinaPage() {
   // ── Compare mode (same punto, two dates) ───────────────────────────────────
   const [compareMode, setCompareMode] = useState(false);
   const [compareFotoIndex, setCompareFotoIndex] = useState(0);
+  const [leftLocked, setLeftLocked] = useState(false);
+  const [rightLocked, setRightLocked] = useState(false);
 
   // ── Add punto flow ─────────────────────────────────────────────────────────
   const [addingPunto, setAddingPunto] = useState(false);
@@ -575,6 +581,8 @@ export default function PiantinaPage() {
     if (compareMode) {
       setCompareMode(false);
       setCompareFotoIndex(0);
+      setLeftLocked(false);
+      setRightLocked(false);
     } else {
       // Enter compare mode — pick a different foto than the current one
       setCompareMode(true);
@@ -583,20 +591,22 @@ export default function PiantinaPage() {
     }
   };
 
-  // Sync rotation: left drives right
+  // Sync rotation: left drives right (unless right is locked)
   const handleLeftRotate = useCallback(
     (lon: number, lat: number) => {
+      if (rightLocked) return;
       rightViewerRef.current?.setCamera(lon, lat);
     },
-    []
+    [rightLocked]
   );
 
-  // Sync rotation: right drives left
+  // Sync rotation: right drives left (unless left is locked)
   const handleRightRotate = useCallback(
     (lon: number, lat: number) => {
+      if (leftLocked) return;
       leftViewerRef.current?.setCamera(lon, lat);
     },
-    []
+    [leftLocked]
   );
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -666,35 +676,69 @@ export default function PiantinaPage() {
               ref={leftViewerRef}
               url={currentFoto!.url}
               onRotate={handleLeftRotate}
+              locked={leftLocked}
             />
-            {/* Left label */}
+            {/* Left label with lock button */}
             <div
               style={{
                 position: "absolute",
                 bottom: 16,
                 left: 16,
                 zIndex: 20,
-                background: "rgba(0,0,0,0.6)",
-                backdropFilter: "blur(8px)",
-                borderRadius: 10,
-                padding: "8px 12px",
-                color: "#fff",
-                fontSize: 12,
-                fontWeight: 500,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: 6,
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 2 }}>
-                {selectedPunto?.nome}
+              {/* Lock toggle (above label) */}
+              <button
+                onClick={() => setLeftLocked(!leftLocked)}
+                title={leftLocked ? "Sblocca vista sinistra" : "Blocca vista sinistra"}
+                style={{
+                  background: leftLocked ? "#6366f1" : "rgba(0,0,0,0.6)",
+                  backdropFilter: "blur(8px)",
+                  border: "none",
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                }}
+              >
+                {leftLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                {leftLocked ? "Bloccato" : "Blocca"}
+              </button>
+
+              <div
+                style={{
+                  background: "rgba(0,0,0,0.6)",
+                  backdropFilter: "blur(8px)",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                  {selectedPunto?.nome}
+                </div>
+                <DateDropdown
+                  fotos={selectedFotoSorted}
+                  selectedIndex={selectedFotoIndex}
+                  onSelect={setSelectedFotoIndex}
+                  open={dateDropdownOpen}
+                  onToggle={() => setDateDropdownOpen(!dateDropdownOpen)}
+                  onDelete={handleDeleteFoto}
+                  openUpward
+                  darkTheme
+                />
               </div>
-              <DateDropdown
-                fotos={selectedFotoSorted}
-                selectedIndex={selectedFotoIndex}
-                onSelect={setSelectedFotoIndex}
-                open={dateDropdownOpen}
-                onToggle={() => setDateDropdownOpen(!dateDropdownOpen)}
-                onDelete={handleDeleteFoto}
-                openUpward
-              />
             </div>
           </div>
 
@@ -704,37 +748,70 @@ export default function PiantinaPage() {
               ref={rightViewerRef}
               url={currentCompareFoto!.url}
               onRotate={handleRightRotate}
+              locked={rightLocked}
             />
-            {/* Right label */}
+            {/* Right label with lock button */}
             <div
               style={{
                 position: "absolute",
                 bottom: 16,
                 right: 16,
                 zIndex: 20,
-                background: "rgba(0,0,0,0.6)",
-                backdropFilter: "blur(8px)",
-                borderRadius: 10,
-                padding: "8px 12px",
-                color: "#fff",
-                fontSize: 12,
-                fontWeight: 500,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-end",
+                gap: 6,
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 2 }}>
-                {selectedPunto?.nome}
+              <button
+                onClick={() => setRightLocked(!rightLocked)}
+                title={rightLocked ? "Sblocca vista destra" : "Blocca vista destra"}
+                style={{
+                  background: rightLocked ? "#6366f1" : "rgba(0,0,0,0.6)",
+                  backdropFilter: "blur(8px)",
+                  border: "none",
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                }}
+              >
+                {rightLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                {rightLocked ? "Bloccato" : "Blocca"}
+              </button>
+
+              <div
+                style={{
+                  background: "rgba(0,0,0,0.6)",
+                  backdropFilter: "blur(8px)",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                  {selectedPunto?.nome}
+                </div>
+                <DateDropdown
+                  fotos={selectedFotoSorted}
+                  selectedIndex={compareFotoIndex}
+                  onSelect={setCompareFotoIndex}
+                  open={compareDateDropdownOpen}
+                  onToggle={() =>
+                    setCompareDateDropdownOpen(!compareDateDropdownOpen)
+                  }
+                  onDelete={handleDeleteFoto}
+                  openUpward
+                  darkTheme
+                />
               </div>
-              <DateDropdown
-                fotos={selectedFotoSorted}
-                selectedIndex={compareFotoIndex}
-                onSelect={setCompareFotoIndex}
-                open={compareDateDropdownOpen}
-                onToggle={() =>
-                  setCompareDateDropdownOpen(!compareDateDropdownOpen)
-                }
-                onDelete={handleDeleteFoto}
-                openUpward
-              />
             </div>
           </div>
         </div>
