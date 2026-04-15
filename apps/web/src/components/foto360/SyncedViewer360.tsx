@@ -45,13 +45,14 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       onRotateRef.current = onRotate;
     }, [onRotate]);
 
-    // Imperative handle: lets parent set camera orientation
+    // Imperative handle: lets parent set camera orientation.
+    // Empty deps — handle is stable across renders so parent's ref stays valid.
     useImperativeHandle(ref, () => ({
       setCamera(lon: number, lat: number) {
         lonRef.current = lon;
         latRef.current = lat;
       },
-    }));
+    }), []);
 
     const loadTexture = useCallback((u: string) => {
       if (!materialRef.current) return;

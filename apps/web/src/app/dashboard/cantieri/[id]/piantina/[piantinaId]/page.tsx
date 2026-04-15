@@ -591,22 +591,29 @@ export default function PiantinaPage() {
     }
   };
 
+  // Keep locked state in refs so rotation handlers can read current values
+  // without being recreated (avoids prop reference changes on SyncedViewer360)
+  const leftLockedRef = useRef(false);
+  const rightLockedRef = useRef(false);
+  useEffect(() => { leftLockedRef.current = leftLocked; }, [leftLocked]);
+  useEffect(() => { rightLockedRef.current = rightLocked; }, [rightLocked]);
+
   // Sync rotation: left drives right (unless right is locked)
   const handleLeftRotate = useCallback(
     (lon: number, lat: number) => {
-      if (rightLocked) return;
+      if (rightLockedRef.current) return;
       rightViewerRef.current?.setCamera(lon, lat);
     },
-    [rightLocked]
+    []
   );
 
   // Sync rotation: right drives left (unless left is locked)
   const handleRightRotate = useCallback(
     (lon: number, lat: number) => {
-      if (leftLocked) return;
+      if (leftLockedRef.current) return;
       leftViewerRef.current?.setCamera(lon, lat);
     },
-    [leftLocked]
+    []
   );
 
   // ── Loading state ──────────────────────────────────────────────────────────

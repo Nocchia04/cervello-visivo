@@ -261,20 +261,52 @@ export async function takePictureViaBle(): Promise<void> {
     // Timeout SC2: fino a 35s
     timeoutId = setTimeout(() => {
       cleanup();
-      reject(new Error('Timeout scatto BLE (35s). La camera potrebbe essere occupata.'));
+      reject(new Error('Timeout scatto BLE. La camera potrebbe essere occupata.'));
     }, BLE_TAKE_PICTURE_TIMEOUT_MS);
 
-    // Scrivi 0x01 per triggerare lo scatto
-    _device!
-      .writeCharacteristicWithResponseForService(
-        THETA_BLE_SERVICES.SHOOTING_CONTROL,
-        THETA_BLE_CHARACTERISTICS.TAKE_PICTURE,
-        btoa(String.fromCharCode(0x01))
-      )
-      .catch((err: any) => {
-        cleanup();
-        reject(new Error(err?.message ?? 'Errore scrittura BLE'));
-      });
+    // Helper: tenta write con retry e fallback writeWithoutResponse
+    const tryWrite = async () => {
+      const payload = btoa(String.fromCharCode(0x01));
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          if (!_device) throw new Error('Device disconnesso');
+          const isConnected = await _device.isConnected().catch(() => false);
+          if (!isConnected) {
+            dlog('BLE', `Scatto: device disconnesso al tentativo ${attempt}, riconnessione...`);
+            await _device.connect({ autoConnect: false });
+            await _device.discoverAllServicesAndCharacteristics();
+            await new Promise((r) => setTimeout(r, 500));
+          }
+
+          if (attempt <= 2) {
+            dlog('BLE', `Scatto write (withResponse) tentativo ${attempt}...`);
+            await _device.writeCharacteristicWithResponseForService(
+              THETA_BLE_SERVICES.SHOOTING_CONTROL,
+              THETA_BLE_CHARACTERISTICS.TAKE_PICTURE,
+              payload
+            );
+          } else {
+            dlog('BLE', 'Scatto write (withoutResponse) fallback...');
+            await _device.writeCharacteristicWithoutResponseForService(
+              THETA_BLE_SERVICES.SHOOTING_CONTROL,
+              THETA_BLE_CHARACTERISTICS.TAKE_PICTURE,
+              payload
+            );
+          }
+          dlog('BLE', 'Scatto write OK — in attesa notifica 0x00...');
+          return;
+        } catch (err: any) {
+          dlog('BLE', `Scatto write tentativo ${attempt} fallito: ${err.message}`);
+          if (attempt === 3) throw err;
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+    };
+
+    tryWrite().catch((err: any) => {
+      cleanup();
+      reject(new Error(err?.message ?? 'Errore scrittura BLE scatto'));
+    });
   });
 }
 

@@ -9,6 +9,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.uimanager.events.RCTEventEmitter
+import java.io.BufferedInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -77,7 +78,9 @@ class ThetaPreviewView(context: Context) : SurfaceView(context), SurfaceHolder.C
                     return@Thread
                 }
 
-                val stream = c.inputStream
+                // BufferedInputStream dramatically reduces syscall overhead
+                // (da ~1 byte/read su TCP socket → batch 64KB per chiamata)
+                val stream = BufferedInputStream(c.inputStream, 65536)
                 var contentLength = -1
                 var inHeaders = false
 
@@ -119,7 +122,11 @@ class ThetaPreviewView(context: Context) : SurfaceView(context), SurfaceHolder.C
     // ── Rendering ───────────────────────────────────────────────────────────
 
     private fun renderFrame(jpegBytes: ByteArray) {
-        val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return
+        // Use RGB_565 for faster decode + less memory (preview doesn't need alpha)
+        val opts = BitmapFactory.Options().apply {
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+        val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, opts) ?: return
         val sh = holder
         if (!sh.surface.isValid) {
             bitmap.recycle()
