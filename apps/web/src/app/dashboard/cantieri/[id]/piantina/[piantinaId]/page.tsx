@@ -607,7 +607,13 @@ export default function PiantinaPage() {
   const handleLeftRotate = useCallback(
     (lon: number, lat: number) => {
       lastLeftPosRef.current = { lon, lat };
-      if (rightLockedRef.current) return;
+      if (rightLockedRef.current) {
+        // eslint-disable-next-line no-console
+        console.log("[PAGE] handleLeftRotate — right LOCKED, no sync");
+        return;
+      }
+      // eslint-disable-next-line no-console
+      console.log("[PAGE] handleLeftRotate → setCamera(right,", lon.toFixed(1), ")");
       rightViewerRef.current?.setCamera(lon, lat);
       lastRightPosRef.current = { lon, lat };
     },
@@ -618,7 +624,13 @@ export default function PiantinaPage() {
   const handleRightRotate = useCallback(
     (lon: number, lat: number) => {
       lastRightPosRef.current = { lon, lat };
-      if (leftLockedRef.current) return;
+      if (leftLockedRef.current) {
+        // eslint-disable-next-line no-console
+        console.log("[PAGE] handleRightRotate — left LOCKED, no sync");
+        return;
+      }
+      // eslint-disable-next-line no-console
+      console.log("[PAGE] handleRightRotate → setCamera(left,", lon.toFixed(1), ")");
       leftViewerRef.current?.setCamera(lon, lat);
       lastLeftPosRef.current = { lon, lat };
     },
@@ -630,6 +642,8 @@ export default function PiantinaPage() {
     (side: "left" | "right") => {
       const leftNow = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
       const rightNow = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
+      // eslint-disable-next-line no-console
+      console.log("[PAGE] TOGGLE-LOCK", side, "leftNow=", leftNow.lon.toFixed(1), "rightNow=", rightNow.lon.toFixed(1));
       lastLeftPosRef.current = leftNow;
       lastRightPosRef.current = rightNow;
 
@@ -637,6 +651,11 @@ export default function PiantinaPage() {
       else setRightLocked((v) => !v);
 
       requestAnimationFrame(() => {
+        const beforeLeft = leftViewerRef.current?.getCamera();
+        const beforeRight = rightViewerRef.current?.getCamera();
+        // eslint-disable-next-line no-console
+        console.log("[PAGE] RAF pre-restore left=", beforeLeft?.lon.toFixed(1), "right=", beforeRight?.lon.toFixed(1),
+          "→ restoring to left=", leftNow.lon.toFixed(1), "right=", rightNow.lon.toFixed(1));
         leftViewerRef.current?.setCamera(leftNow.lon, leftNow.lat);
         rightViewerRef.current?.setCamera(rightNow.lon, rightNow.lat);
       });
