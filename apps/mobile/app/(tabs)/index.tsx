@@ -77,10 +77,6 @@ export default function HomeScreen() {
                 <Text style={styles.heroTitle}>{attivi.length} Cantieri attivi</Text>
               )}
             </View>
-            <TouchableOpacity style={styles.notifBtn} activeOpacity={0.7}>
-              <Feather name="bell" size={18} color={colors.text} />
-              {attivi.length > 0 && <View style={styles.notifDot} />}
-            </TouchableOpacity>
           </View>
 
           {/* ── Hero cards — horizontal scroll ── */}

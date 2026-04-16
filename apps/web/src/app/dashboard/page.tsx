@@ -219,12 +219,6 @@ export default function DashboardPage() {
           label="Piante caricate"
           color="#22c55e"
         />
-        <BentoCard
-          icon={Camera}
-          value="—"
-          label="Foto 360°"
-          color="#f59e0b"
-        />
       </div>
 
       {/* Cantieri section */}

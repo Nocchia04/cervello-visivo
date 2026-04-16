@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,12 +10,16 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@apollo/client";
-import { router, useLocalSearchParams, Stack } from "expo-router";
+import { router, useLocalSearchParams, Stack, useFocusEffect } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { CANTIERE_QUERY } from "../../src/graphql/queries";
 import { PiantinaMap } from "../../src/components/PiantinaMap";
 import { UploadQueueBadge } from "../../src/components/UploadQueueBadge";
 import { colors, spacing, radius, typography, shadow } from "../../src/lib/theme";
+import { performBleConnect, BleNoSetupError } from "../../src/modules/theta/ble/autoConnect";
+import { isBluetoothConnected, onConnectionChange } from "../../src/modules/theta/ble/ThetaBleService";
+
+type BleGateStatus = "connecting" | "connected" | "no_setup" | "error";
 
 interface PuntoDiScatto {
   id: string;
@@ -44,6 +48,55 @@ export default function PiantinaScreen() {
   const [selectedPunto, setSelectedPunto] = useState<PuntoDiScatto | null>(null);
   const [tabAnim] = useState(() => new Animated.Value(0));
   const [tabContainerWidth, setTabContainerWidth] = useState(0);
+
+  // ── BLE gate ────────────────────────────────────────────────────────────
+  const [bleStatus, setBleStatus] = useState<BleGateStatus>(
+    isBluetoothConnected() ? "connected" : "connecting"
+  );
+  const [bleError, setBleError] = useState<string>("");
+  const bleAttemptRef = useRef(0);
+
+  const connectBle = useCallback(async () => {
+    const attempt = ++bleAttemptRef.current;
+    setBleStatus("connecting");
+    setBleError("");
+    try {
+      await performBleConnect();
+      if (bleAttemptRef.current !== attempt) return; // superato da nuovo tentativo
+      setBleStatus("connected");
+    } catch (err) {
+      if (bleAttemptRef.current !== attempt) return;
+      if (err instanceof BleNoSetupError) {
+        setBleStatus("no_setup");
+      } else {
+        setBleError(err instanceof Error ? err.message : "Errore sconosciuto");
+        setBleStatus("error");
+      }
+    }
+  }, []);
+
+  // Ricolleghiamo al focus ogni volta che si torna su questa schermata
+  useFocusEffect(
+    useCallback(() => {
+      if (!isBluetoothConnected()) {
+        connectBle();
+      } else {
+        setBleStatus("connected");
+      }
+    }, [connectBle])
+  );
+
+  // Ascolta disconnessioni runtime (camera spenta / out-of-range)
+  useEffect(() => {
+    return onConnectionChange((connected) => {
+      if (connected) {
+        setBleStatus("connected");
+      } else if (bleStatus === "connected") {
+        // Disconnessione inaspettata — riavvia ciclo
+        connectBle();
+      }
+    });
+  }, [bleStatus, connectBle]);
 
   const { data, loading, error } = useQuery(CANTIERE_QUERY, {
     variables: { id: cantiereId },
@@ -215,6 +268,69 @@ export default function PiantinaScreen() {
           />
         )}
       </View>
+
+      {/* ── BLE gate overlay ── */}
+      {bleStatus !== "connected" && (
+        <View style={styles.bleOverlay} pointerEvents="auto">
+          <View style={styles.bleCard}>
+            {bleStatus === "connecting" && (
+              <>
+                <ActivityIndicator size="large" color={colors.accent} />
+                <Text style={styles.bleTitle}>Connessione camera...</Text>
+                <Text style={styles.bleSubtitle}>
+                  Attendi che la camera RICOH THETA sia connessa via Bluetooth prima di continuare.
+                </Text>
+              </>
+            )}
+
+            {bleStatus === "error" && (
+              <>
+                <Feather name="alert-triangle" size={40} color={colors.danger} />
+                <Text style={styles.bleTitle}>Connessione fallita</Text>
+                <Text style={styles.bleSubtitle}>
+                  {bleError || "Verifica che la camera sia accesa e vicina al telefono."}
+                </Text>
+                <TouchableOpacity
+                  style={styles.bleBtnPrimary}
+                  onPress={connectBle}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="refresh-cw" size={16} color={colors.white} />
+                  <Text style={styles.bleBtnPrimaryText}>Riprova</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.bleBtnGhost}
+                  onPress={() => router.back()}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.bleBtnGhostText}>Torna indietro</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {bleStatus === "no_setup" && (
+              <>
+                <Feather name="settings" size={40} color={colors.accent} />
+                <Text style={styles.bleTitle}>Camera non configurata</Text>
+                <Text style={styles.bleSubtitle}>
+                  Configura prima la camera nelle Impostazioni per poter scattare.
+                </Text>
+                <TouchableOpacity
+                  style={styles.bleBtnPrimary}
+                  onPress={() => {
+                    router.back();
+                    router.push("/(tabs)/impostazioni");
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="settings" size={16} color={colors.white} />
+                  <Text style={styles.bleBtnPrimaryText}>Vai alle Impostazioni</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* ── Bottom action bar ── */}
       {selectedPunto && (
@@ -417,6 +533,66 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: colors.white,
+  },
+
+  // ── BLE gate overlay ──
+  bleOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+    zIndex: 100,
+  },
+  bleCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.md,
+    ...shadow.lg,
+  },
+  bleTitle: {
+    ...typography.h3,
+    color: colors.text,
+    textAlign: "center",
+  },
+  bleSubtitle: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  bleBtnPrimary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    width: "100%",
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+    marginTop: spacing.sm,
+  },
+  bleBtnPrimaryText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.white,
+  },
+  bleBtnGhost: {
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  bleBtnGhostText: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
   },
 
   // ── States ──

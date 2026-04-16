@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
-  FlatList,
   Modal,
   Platform,
 } from "react-native";
@@ -22,12 +21,11 @@ import { ricohClient } from "../../src/services/ricoh/RicohClient";
 import { connectToCamera, isCameraWifiConnected, unbindFromCameraNetwork } from "../../src/services/ricoh/ThetaWifi";
 import { CAMERA_ERROR_MESSAGES } from "../../src/services/ricoh/constants";
 import {
-  scanAndConnect,
-  connectByPeripheralId,
   takePictureViaBle,
   disconnectBle,
   isBluetoothConnected,
 } from "../../src/modules/theta/ble/ThetaBleService";
+import { performBleConnect, BleNoSetupError } from "../../src/modules/theta/ble/autoConnect";
 import { getCameraCredentials, getThetaBleCredentials } from "../../src/lib/storage";
 import { uploadQueue } from "../../src/services/upload/UploadQueue";
 import { RicohPreview } from "../../src/components/RicohPreview";
@@ -37,43 +35,8 @@ import { UploadQueueBadge } from "../../src/components/UploadQueueBadge";
 import { DebugLogOverlay } from "../../src/components/DebugLogOverlay";
 import { colors, spacing, radius, typography, shadow } from "../../src/lib/theme";
 import { dlog } from "../../src/lib/debugLog";
-import type { OscFileEntry } from "../../src/services/ricoh/types";
 
 type BleStatus = "idle" | "connecting" | "connected" | "error" | "no_setup";
-
-/**
- * Logica comune per connettere la camera via BLE.
- * Tenta prima la connessione diretta per peripheral ID (veloce),
- * poi fallback a scan per nome (lenta ma affidabile).
- * Ritorna il deviceName salvato; lancia errore in caso di fallimento.
- * Lancia BleNoSetupError se il setup non è stato completato.
- */
-class BleNoSetupError extends Error {
-  constructor() { super("BLE non configurato"); }
-}
-
-async function performBleConnect(): Promise<string> {
-  const { uuid, deviceName, peripheralId, setupComplete } = await getThetaBleCredentials();
-  dlog('BLE', `Credenziali: setup=${setupComplete}, device="${deviceName}", periph="${peripheralId?.substring(0, 12) ?? 'null'}"`);
-  if (!setupComplete || !uuid || !deviceName) {
-    dlog('BLE', 'Setup non completato — skip');
-    throw new BleNoSetupError();
-  }
-  if (peripheralId) {
-    try {
-      dlog('BLE', 'Tentativo connessione diretta per peripheralId...');
-      await connectByPeripheralId(peripheralId, uuid);
-      dlog('BLE', 'Connessione diretta OK');
-    } catch (e: any) {
-      dlog('BLE', `Connessione diretta fallita: ${e.message} — fallback scan`);
-      await scanAndConnect(deviceName, uuid);
-    }
-  } else {
-    dlog('BLE', 'Nessun peripheralId — scan completo');
-    await scanAndConnect(deviceName, uuid);
-  }
-  return deviceName;
-}
 
 export default function ScattoScreen() {
   const { puntoId, puntoNome, piantinaId, piantinaNome } = useLocalSearchParams<{
@@ -95,8 +58,6 @@ export default function ScattoScreen() {
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [takingStep, setTakingStep] = useState("");
   const [lastPhotoUri, setLastPhotoUri] = useState<string | null>(null);
-  const [cameraFiles, setCameraFiles] = useState<OscFileEntry[]>([]);
-  const [loadingFiles, setLoadingFiles] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
   // Pending photo waiting for user confirmation before upload
@@ -112,18 +73,6 @@ export default function ScattoScreen() {
     refresh();
     const interval = setInterval(refresh, 3000);
     return () => clearInterval(interval);
-  }, []);
-
-  const loadCameraFiles = useCallback(async () => {
-    setLoadingFiles(true);
-    try {
-      const result = await ricohClient.listFiles(5);
-      setCameraFiles(result.entries ?? []);
-    } catch {
-      // Non-critical
-    } finally {
-      setLoadingFiles(false);
-    }
   }, []);
 
   // Auto-connette BLE all'apertura della schermata
@@ -198,7 +147,7 @@ export default function ScattoScreen() {
         setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
       }
     }
-  }, [loadCameraFiles]);
+  }, []);
 
   const takePicture = useCallback(async () => {
     if (bleStatus !== "connected") return;
@@ -252,7 +201,6 @@ export default function ScattoScreen() {
       setTakingStep("");
       const queueItemId = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       setPendingPhoto({ localUri, queueId: queueItemId, timestamp: new Date().toISOString() });
-      loadCameraFiles();
     } catch (err) {
       setTakingStep("");
       Alert.alert("Errore scatto", err instanceof Error ? err.message : "Errore durante lo scatto");
@@ -260,7 +208,7 @@ export default function ScattoScreen() {
     } finally {
       setIsTakingPicture(false);
     }
-  }, [bleStatus, loadCameraFiles]);
+  }, [bleStatus]);
 
   const handleConfermaPhoto = useCallback(async () => {
     if (!pendingPhoto) return;
@@ -273,7 +221,8 @@ export default function ScattoScreen() {
     setLastPhotoUri(pendingPhoto.localUri);
     uploadQueue.getPendingCount().then(setPendingCount);
     setPendingPhoto(null);
-    previewRef.current?.startStream();
+    // Torna alla piantina — lì riparte la riconnessione BLE per lo scatto successivo
+    router.back();
   }, [pendingPhoto, puntoId]);
 
   const handleScartaPhoto = useCallback(async () => {
@@ -313,29 +262,6 @@ export default function ScattoScreen() {
       );
     }
   }, [puntoId]);
-
-  const addCameraFileToQueue = useCallback(
-    async (fileEntry: OscFileEntry) => {
-      try {
-        const localUri = await ricohClient.downloadFile(fileEntry.fileUrl);
-        const queueItemId = `cam_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        await uploadQueue.addToQueue({
-          id: queueItemId,
-          localUri,
-          puntoDiScattoId: puntoId as string,
-          timestamp: new Date().toISOString(),
-        });
-        uploadQueue.getPendingCount().then(setPendingCount);
-        Alert.alert("Aggiunta", "Foto aggiunta alla coda di upload.");
-      } catch (err) {
-        Alert.alert(
-          "Errore download",
-          err instanceof Error ? err.message : "Errore durante il download"
-        );
-      }
-    },
-    [puntoId]
-  );
 
   const viewAnnotazioni = useCallback(() => {
     if (lastPhotoUri) {
@@ -482,51 +408,6 @@ export default function ScattoScreen() {
           </Text>
         </View>
 
-        {/* Camera files thumbnails */}
-        {bleStatus === "connected" && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Ultime foto sulla camera</Text>
-            {loadingFiles ? (
-              <ActivityIndicator
-                color={colors.accent}
-                style={{ marginVertical: spacing.lg }}
-              />
-            ) : cameraFiles.length > 0 ? (
-              <FlatList
-                horizontal
-                data={cameraFiles}
-                keyExtractor={(item) => item.fileUrl}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: spacing.sm }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.thumbCard}
-                    onPress={() => addCameraFileToQueue(item)}
-                    activeOpacity={0.7}
-                  >
-                    {item.thumbnail ? (
-                      <Image
-                        source={{ uri: `data:image/jpeg;base64,${item.thumbnail}` }}
-                        style={styles.thumbImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={styles.thumbPlaceholder}>
-                        <Feather name="camera" size={22} color={colors.textSubtle} />
-                      </View>
-                    )}
-                    <Text style={styles.thumbName} numberOfLines={1}>
-                      {item.name ?? item.fileUrl.split("/").pop()}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              />
-            ) : (
-              <Text style={styles.noFilesText}>Nessuna foto trovata</Text>
-            )}
-          </View>
-        )}
-
         {/* Import from device */}
         <View style={styles.section}>
           <TouchableOpacity
@@ -586,6 +467,26 @@ export default function ScattoScreen() {
         {/* Bottom spacer */}
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
+
+      {/* Full-screen loading overlay during capture + download */}
+      <Modal
+        visible={isTakingPicture}
+        animationType="fade"
+        transparent
+        onRequestClose={() => { /* blocca back button durante scatto */ }}
+      >
+        <View style={styles.captureOverlay}>
+          <View style={styles.captureOverlayInner}>
+            <ActivityIndicator size="large" color={colors.white} />
+            <Text style={styles.captureOverlayTitle}>
+              {takingStep.includes("Download") ? "Download foto in corso" : takingStep || "Scatto in corso"}
+            </Text>
+            <Text style={styles.captureOverlaySubtitle}>
+              Attendi che la foto 360° sia pronta — non chiudere l'app.
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       {/* 360° preview modal — shown after shot, before upload */}
       <Modal
@@ -855,37 +756,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  // Camera files thumbnails
-  thumbCard: {
-    width: 110,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    overflow: "hidden",
-    ...shadow.sm,
-  },
-  thumbImage: {
-    width: 110,
-    height: 82,
-  },
-  thumbPlaceholder: {
-    width: 110,
-    height: 82,
-    backgroundColor: colors.surfaceHover,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  thumbName: {
-    ...typography.caption,
-    color: colors.textSubtle,
-    padding: spacing.xs,
-    textAlign: "center",
-  },
-  noFilesText: {
-    ...typography.bodySmall,
-    color: colors.textSubtle,
-    textAlign: "center",
-    paddingVertical: spacing.lg,
-  },
 
   // Import from device
   pickButton: {
@@ -967,6 +837,30 @@ const styles = StyleSheet.create({
   annotazioniButtonText: {
     ...typography.h4,
     color: colors.accent,
+  },
+
+  // Full-screen capture loading overlay
+  captureOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  captureOverlayInner: {
+    alignItems: "center",
+    gap: spacing.lg,
+  },
+  captureOverlayTitle: {
+    ...typography.h3,
+    color: colors.white,
+    textAlign: "center",
+  },
+  captureOverlaySubtitle: {
+    ...typography.bodySmall,
+    color: "rgba(255,255,255,0.7)",
+    textAlign: "center",
+    lineHeight: 20,
   },
 
   // 360° preview modal

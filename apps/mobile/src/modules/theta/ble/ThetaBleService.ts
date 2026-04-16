@@ -26,6 +26,22 @@ import {
 const _manager = new BleManager();
 let _device: Device | null = null;
 
+// Listener per cambi di stato connessione (connect/disconnect).
+// La UI si sottoscrive per riflettere lo stato in tempo reale.
+type ConnectionListener = (connected: boolean) => void;
+const _connectionListeners = new Set<ConnectionListener>();
+
+function _notifyConnectionChange(connected: boolean) {
+  _connectionListeners.forEach((fn) => {
+    try { fn(connected); } catch {}
+  });
+}
+
+export function onConnectionChange(listener: ConnectionListener): () => void {
+  _connectionListeners.add(listener);
+  return () => { _connectionListeners.delete(listener); };
+}
+
 // ── Permissions ──────────────────────────────────────────────────────────────
 
 async function requestBlePermissions(): Promise<void> {
@@ -219,10 +235,12 @@ async function _connectAndAuth(device: Device, bleUuid: string): Promise<string>
   mtuNegotiated.onDisconnected((err) => {
     dlog('BLE', `Disconnesso${err ? `: ${err.message}` : ' (pulito)'}`);
     _device = null;
+    _notifyConnectionChange(false);
   });
 
   await authenticateDevice(bleUuid);
   dlog('BLE', 'Autenticato OK');
+  _notifyConnectionChange(true);
   return mtuNegotiated.id;
 }
 
@@ -329,6 +347,7 @@ export async function disconnectBle(): Promise<void> {
       await _device.cancelConnection();
     } catch {}
     _device = null;
+    _notifyConnectionChange(false);
   }
 }
 
