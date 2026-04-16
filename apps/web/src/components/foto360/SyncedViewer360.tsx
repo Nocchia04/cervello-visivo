@@ -162,22 +162,29 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       isDraggingRef.current = false;
     };
 
-    // Touch drag
+    // Touch drag — registered natively with { passive: false } so preventDefault works
     const lastTouchRef = useRef({ x: 0, y: 0 });
     const onTouchStart = (e: React.TouchEvent) => {
       if (lockedRef.current) return;
       lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       dragBaseRef.current = { lon: lonRef.current, lat: latRef.current };
     };
-    const onTouchMove = (e: React.TouchEvent) => {
-      if (lockedRef.current) return;
-      e.preventDefault();
-      const dx = e.touches[0].clientX - lastTouchRef.current.x;
-      const dy = e.touches[0].clientY - lastTouchRef.current.y;
-      lonRef.current = dragBaseRef.current.lon + dx * 0.3;
-      latRef.current = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
-      onRotateRef.current?.(lonRef.current, latRef.current);
-    };
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const handler = (e: TouchEvent) => {
+        if (lockedRef.current) return;
+        e.preventDefault();
+        const dx = e.touches[0].clientX - lastTouchRef.current.x;
+        const dy = e.touches[0].clientY - lastTouchRef.current.y;
+        lonRef.current = dragBaseRef.current.lon + dx * 0.3;
+        latRef.current = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
+        onRotateRef.current?.(lonRef.current, latRef.current);
+      };
+      canvas.addEventListener("touchmove", handler, { passive: false });
+      return () => canvas.removeEventListener("touchmove", handler);
+    }, []);
 
     return (
       <div
@@ -193,7 +200,6 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseUp}
           onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
           onTouchEnd={onMouseUp}
         />
         {loading && (

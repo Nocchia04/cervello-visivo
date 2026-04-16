@@ -593,17 +593,23 @@ export default function PiantinaPage() {
   };
 
   // Keep locked state in refs so rotation handlers can read current values
-  // without being recreated (avoids prop reference changes on SyncedViewer360)
   const leftLockedRef = useRef(false);
   const rightLockedRef = useRef(false);
   useEffect(() => { leftLockedRef.current = leftLocked; }, [leftLocked]);
   useEffect(() => { rightLockedRef.current = rightLocked; }, [rightLocked]);
 
+  // Track last-known position of each side in parent state.
+  // Updated on every drag — serves as source of truth across lock toggles.
+  const lastLeftPosRef = useRef({ lon: 0, lat: 0 });
+  const lastRightPosRef = useRef({ lon: 0, lat: 0 });
+
   // Sync rotation: left drives right (unless right is locked)
   const handleLeftRotate = useCallback(
     (lon: number, lat: number) => {
+      lastLeftPosRef.current = { lon, lat };
       if (rightLockedRef.current) return;
       rightViewerRef.current?.setCamera(lon, lat);
+      lastRightPosRef.current = { lon, lat };
     },
     []
   );
@@ -611,29 +617,29 @@ export default function PiantinaPage() {
   // Sync rotation: right drives left (unless left is locked)
   const handleRightRotate = useCallback(
     (lon: number, lat: number) => {
+      lastRightPosRef.current = { lon, lat };
       if (leftLockedRef.current) return;
       leftViewerRef.current?.setCamera(lon, lat);
+      lastLeftPosRef.current = { lon, lat };
     },
     []
   );
 
   // Toggle lock preserving camera positions on both sides.
-  // Continuously re-applies positions for ~250ms to defend against any
-  // delayed re-render side effects that might reset the cameras.
   const toggleLockPreservingPositions = useCallback(
     (side: "left" | "right") => {
-      const leftPos = leftViewerRef.current?.getCamera();
-      const rightPos = rightViewerRef.current?.getCamera();
+      const leftNow = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
+      const rightNow = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
+      lastLeftPosRef.current = leftNow;
+      lastRightPosRef.current = rightNow;
+
       if (side === "left") setLeftLocked((v) => !v);
       else setRightLocked((v) => !v);
-      if (!leftPos && !rightPos) return;
-      let elapsed = 0;
-      const interval = setInterval(() => {
-        if (leftPos) leftViewerRef.current?.setCamera(leftPos.lon, leftPos.lat);
-        if (rightPos) rightViewerRef.current?.setCamera(rightPos.lon, rightPos.lat);
-        elapsed += 16;
-        if (elapsed >= 250) clearInterval(interval);
-      }, 16);
+
+      requestAnimationFrame(() => {
+        leftViewerRef.current?.setCamera(leftNow.lon, leftNow.lat);
+        rightViewerRef.current?.setCamera(rightNow.lon, rightNow.lat);
+      });
     },
     []
   );
