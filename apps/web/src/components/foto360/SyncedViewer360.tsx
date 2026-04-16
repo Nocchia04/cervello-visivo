@@ -50,11 +50,6 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
     // Empty deps — handle is stable across renders so parent's ref stays valid.
     useImperativeHandle(ref, () => ({
       setCamera(lon: number, lat: number) {
-        // eslint-disable-next-line no-console
-        console.log("[SV360] setCamera", {
-          from: { lon: lonRef.current.toFixed(1), lat: latRef.current.toFixed(1) },
-          to: { lon: lon.toFixed(1), lat: lat.toFixed(1) },
-        });
         lonRef.current = lon;
         latRef.current = lat;
       },
@@ -148,36 +143,18 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
 
     // Mouse drag — absolute from mousedown position (avoids drift)
     const onMouseDown = (e: React.MouseEvent) => {
-      if (lockedRef.current) {
-        // eslint-disable-next-line no-console
-        console.log("[SV360] onMouseDown BLOCKED by lock");
-        return;
-      }
+      if (lockedRef.current) return;
       isDraggingRef.current = true;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
       dragBaseRef.current = { lon: lonRef.current, lat: latRef.current };
-      firstMoveLogRef.current = true;
-      // eslint-disable-next-line no-console
-      console.log("[SV360] onMouseDown dragBase=", {
-        lon: dragBaseRef.current.lon.toFixed(1),
-        lat: dragBaseRef.current.lat.toFixed(1),
-      });
     };
 
-    const firstMoveLogRef = useRef(true);
     const onMouseMove = (e: React.MouseEvent) => {
       if (!isDraggingRef.current || lockedRef.current) return;
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
-      const newLon = dragBaseRef.current.lon + dx * 0.3;
-      const newLat = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
-      if (firstMoveLogRef.current) {
-        // eslint-disable-next-line no-console
-        console.log("[SV360] FIRST mouseMove dx=", dx, "base=", dragBaseRef.current.lon.toFixed(1), "newLon=", newLon.toFixed(1));
-        firstMoveLogRef.current = false;
-      }
-      lonRef.current = newLon;
-      latRef.current = newLat;
+      lonRef.current = dragBaseRef.current.lon + dx * 0.3;
+      latRef.current = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
       onRotateRef.current?.(lonRef.current, latRef.current);
     };
 

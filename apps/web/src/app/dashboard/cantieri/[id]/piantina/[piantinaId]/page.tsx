@@ -603,36 +603,37 @@ export default function PiantinaPage() {
   const lastLeftPosRef = useRef({ lon: 0, lat: 0 });
   const lastRightPosRef = useRef({ lon: 0, lat: 0 });
 
-  // Sync rotation: left drives right (unless right is locked)
+  // Sync rotation: left drives right (unless right is locked).
+  // Uses DELTA instead of absolute position so that if the two sides
+  // are desynced (e.g. after a lock), the other side follows the movement
+  // without jumping to match absolute position.
   const handleLeftRotate = useCallback(
     (lon: number, lat: number) => {
+      const deltaLon = lon - lastLeftPosRef.current.lon;
+      const deltaLat = lat - lastLeftPosRef.current.lat;
       lastLeftPosRef.current = { lon, lat };
-      if (rightLockedRef.current) {
-        // eslint-disable-next-line no-console
-        console.log("[PAGE] handleLeftRotate — right LOCKED, no sync");
-        return;
-      }
-      // eslint-disable-next-line no-console
-      console.log("[PAGE] handleLeftRotate → setCamera(right,", lon.toFixed(1), ")");
-      rightViewerRef.current?.setCamera(lon, lat);
-      lastRightPosRef.current = { lon, lat };
+      if (rightLockedRef.current) return;
+      const rightCurrent = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
+      const newRightLon = rightCurrent.lon + deltaLon;
+      const newRightLat = Math.max(-85, Math.min(85, rightCurrent.lat + deltaLat));
+      rightViewerRef.current?.setCamera(newRightLon, newRightLat);
+      lastRightPosRef.current = { lon: newRightLon, lat: newRightLat };
     },
     []
   );
 
-  // Sync rotation: right drives left (unless left is locked)
+  // Sync rotation: right drives left (unless left is locked). Uses delta.
   const handleRightRotate = useCallback(
     (lon: number, lat: number) => {
+      const deltaLon = lon - lastRightPosRef.current.lon;
+      const deltaLat = lat - lastRightPosRef.current.lat;
       lastRightPosRef.current = { lon, lat };
-      if (leftLockedRef.current) {
-        // eslint-disable-next-line no-console
-        console.log("[PAGE] handleRightRotate — left LOCKED, no sync");
-        return;
-      }
-      // eslint-disable-next-line no-console
-      console.log("[PAGE] handleRightRotate → setCamera(left,", lon.toFixed(1), ")");
-      leftViewerRef.current?.setCamera(lon, lat);
-      lastLeftPosRef.current = { lon, lat };
+      if (leftLockedRef.current) return;
+      const leftCurrent = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
+      const newLeftLon = leftCurrent.lon + deltaLon;
+      const newLeftLat = Math.max(-85, Math.min(85, leftCurrent.lat + deltaLat));
+      leftViewerRef.current?.setCamera(newLeftLon, newLeftLat);
+      lastLeftPosRef.current = { lon: newLeftLon, lat: newLeftLat };
     },
     []
   );
@@ -642,8 +643,6 @@ export default function PiantinaPage() {
     (side: "left" | "right") => {
       const leftNow = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
       const rightNow = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
-      // eslint-disable-next-line no-console
-      console.log("[PAGE] TOGGLE-LOCK", side, "leftNow=", leftNow.lon.toFixed(1), "rightNow=", rightNow.lon.toFixed(1));
       lastLeftPosRef.current = leftNow;
       lastRightPosRef.current = rightNow;
 
@@ -651,11 +650,6 @@ export default function PiantinaPage() {
       else setRightLocked((v) => !v);
 
       requestAnimationFrame(() => {
-        const beforeLeft = leftViewerRef.current?.getCamera();
-        const beforeRight = rightViewerRef.current?.getCamera();
-        // eslint-disable-next-line no-console
-        console.log("[PAGE] RAF pre-restore left=", beforeLeft?.lon.toFixed(1), "right=", beforeRight?.lon.toFixed(1),
-          "→ restoring to left=", leftNow.lon.toFixed(1), "right=", rightNow.lon.toFixed(1));
         leftViewerRef.current?.setCamera(leftNow.lon, leftNow.lat);
         rightViewerRef.current?.setCamera(rightNow.lon, rightNow.lat);
       });
