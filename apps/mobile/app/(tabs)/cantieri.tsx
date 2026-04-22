@@ -167,14 +167,6 @@ export default function CantieriScreen() {
         <Text style={styles.headerTitle}>Cantieri</Text>
         <View style={styles.headerRight}>
           <UploadQueueBadge />
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={styles.iconBtn}
-            activeOpacity={0.7}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Feather name="log-out" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
         </View>
       </View>
 

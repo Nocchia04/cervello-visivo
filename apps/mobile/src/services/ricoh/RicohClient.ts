@@ -152,6 +152,37 @@ class RicohClient {
     return downloadResult.uri;
   }
 
+  /**
+   * Imposta opzioni sulla camera. Es:
+   *   setOptions({ previewFormat: { width: 1024, height: 512, framerate: 30 } })
+   *   setOptions({ _wlanFrequency: 5.0 })
+   * Soft-fail: se la camera non supporta un'opzione, ignora l'errore.
+   */
+  async setOptions(options: Record<string, unknown>): Promise<void> {
+    const result: OscCommandResponse = await this.oscPost(
+      OSC_ENDPOINTS.EXECUTE,
+      { name: "camera.setOptions", parameters: { options } }
+    );
+    if (result.state === COMMAND_STATUS.ERROR) {
+      throw new Error(
+        `setOptions error: ${result.error?.code} - ${result.error?.message}`
+      );
+    }
+  }
+
+  /**
+   * Tenta di impostare le opzioni, ignorando errori (per opzioni non supportate dal modello).
+   * Ritorna true se success, false se fallito.
+   */
+  async trySetOptions(options: Record<string, unknown>): Promise<boolean> {
+    try {
+      await this.setOptions(options);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async checkConnection(): Promise<boolean> {
     try {
       const info = await this.getInfo();

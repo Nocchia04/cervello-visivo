@@ -10,7 +10,11 @@ import android.os.Build
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -189,34 +193,159 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
             ?: return promise.reject("NOT_CONNECTED", "Non connesso al WiFi della camera")
 
         Thread {
-            var conn: HttpURLConnection? = null
             try {
-                conn = network.openConnection(URL(url)) as HttpURLConnection
-                conn.connectTimeout = 30_000
-                conn.readTimeout   = 120_000
-                conn.instanceFollowRedirects = false
-                conn.connect()
-
-                val code = conn.responseCode
-                if (code != 200) {
-                    promise.reject("DOWNLOAD_ERROR", "HTTP $code durante il download")
-                    return@Thread
-                }
-
                 val file = File(destPath)
                 file.parentFile?.mkdirs()
-                conn.inputStream.use { input ->
-                    file.outputStream().use { output ->
-                        input.copyTo(output)
+
+                // Step 1: HEAD per scoprire dimensione e supporto Range
+                var headConn: HttpURLConnection? = null
+                var contentLength: Long = -1
+                var acceptsRanges = false
+                try {
+                    headConn = network.openConnection(URL(url)) as HttpURLConnection
+                    headConn.requestMethod = "HEAD"
+                    headConn.connectTimeout = 10_000
+                    headConn.readTimeout = 15_000
+                    headConn.instanceFollowRedirects = false
+                    headConn.setRequestProperty("Connection", "keep-alive")
+                    if (headConn.responseCode == 200) {
+                        contentLength = headConn.contentLengthLong
+                        acceptsRanges = headConn.getHeaderField("Accept-Ranges")
+                            ?.equals("bytes", ignoreCase = true) == true
                     }
+                } catch (_: Exception) {
+                    // Fallback a sequenziale se HEAD fallisce
+                } finally {
+                    headConn?.disconnect()
                 }
-                promise.resolve(destPath)
+
+                // Step 2: se Range supportato e file > 1MB, scarica in parallelo
+                val CHUNK_COUNT = 4
+                val MIN_CHUNK_SIZE = 512 * 1024L  // 512KB minimo per chunk
+                if (acceptsRanges && contentLength > MIN_CHUNK_SIZE * CHUNK_COUNT) {
+                    downloadChunked(network, url, file, contentLength, CHUNK_COUNT, promise)
+                } else {
+                    downloadSequential(network, url, file, promise)
+                }
             } catch (e: Exception) {
                 promise.reject("DOWNLOAD_FAILED", e.message ?: "Download fallito")
-            } finally {
-                conn?.disconnect()
             }
         }.start()
+    }
+
+    /** Download sequenziale (fallback se Range non supportato o file piccolo) */
+    private fun downloadSequential(
+        network: Network,
+        url: String,
+        file: File,
+        promise: Promise
+    ) {
+        var conn: HttpURLConnection? = null
+        try {
+            conn = network.openConnection(URL(url)) as HttpURLConnection
+            conn.connectTimeout = 30_000
+            conn.readTimeout = 120_000
+            conn.instanceFollowRedirects = false
+            conn.setRequestProperty("Connection", "keep-alive")
+            conn.setRequestProperty("Accept-Encoding", "identity")
+            conn.connect()
+
+            if (conn.responseCode != 200) {
+                promise.reject("DOWNLOAD_ERROR", "HTTP ${conn.responseCode} durante il download")
+                return
+            }
+
+            val bufferSize = 256 * 1024
+            BufferedInputStream(conn.inputStream, bufferSize).use { input ->
+                BufferedOutputStream(FileOutputStream(file), bufferSize).use { output ->
+                    input.copyTo(output, bufferSize)
+                }
+            }
+            promise.resolve(file.absolutePath)
+        } catch (e: Exception) {
+            promise.reject("DOWNLOAD_FAILED", e.message ?: "Download fallito")
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /** Download parallelo con HTTP Range: divide in `chunkCount` pezzi scaricati in parallelo */
+    private fun downloadChunked(
+        network: Network,
+        url: String,
+        file: File,
+        totalSize: Long,
+        chunkCount: Int,
+        promise: Promise
+    ) {
+        try {
+            // Pre-alloca il file a dimensione totale
+            RandomAccessFile(file, "rw").use { raf -> raf.setLength(totalSize) }
+
+            val chunkSize = totalSize / chunkCount
+            val errors = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val latch = java.util.concurrent.CountDownLatch(chunkCount)
+
+            for (i in 0 until chunkCount) {
+                val start = i * chunkSize
+                val end = if (i == chunkCount - 1) totalSize - 1 else (start + chunkSize - 1)
+
+                Thread {
+                    var conn: HttpURLConnection? = null
+                    try {
+                        conn = network.openConnection(URL(url)) as HttpURLConnection
+                        conn.requestMethod = "GET"
+                        conn.connectTimeout = 30_000
+                        conn.readTimeout = 120_000
+                        conn.instanceFollowRedirects = false
+                        conn.setRequestProperty("Connection", "keep-alive")
+                        conn.setRequestProperty("Accept-Encoding", "identity")
+                        conn.setRequestProperty("Range", "bytes=$start-$end")
+                        conn.connect()
+
+                        val code = conn.responseCode
+                        if (code != 206 && code != 200) {
+                            errors.add("Chunk $i HTTP $code")
+                            return@Thread
+                        }
+
+                        val bufferSize = 128 * 1024
+                        RandomAccessFile(file, "rw").use { raf ->
+                            raf.seek(start)
+                            BufferedInputStream(conn.inputStream, bufferSize).use { input ->
+                                val buf = ByteArray(bufferSize)
+                                var read: Int
+                                while (input.read(buf).also { read = it } > 0) {
+                                    raf.write(buf, 0, read)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        errors.add("Chunk $i: ${e.message}")
+                    } finally {
+                        conn?.disconnect()
+                        latch.countDown()
+                    }
+                }.start()
+            }
+
+            // Attendi tutti i thread (max 3 minuti total)
+            if (!latch.await(180, java.util.concurrent.TimeUnit.SECONDS)) {
+                promise.reject("DOWNLOAD_TIMEOUT", "Timeout download parallelo")
+                return
+            }
+
+            if (errors.isNotEmpty()) {
+                // Qualcosa è andato storto — fallback sequenziale
+                downloadSequential(network, url, file, promise)
+                return
+            }
+
+            promise.resolve(file.absolutePath)
+        } catch (e: Exception) {
+            // Se il parallel fallisce per qualsiasi ragione, fallback sequenziale
+            downloadSequential(network, url, file, promise)
+        }
     }
 
     // ── Diagnostics ───────────────────────────────────────────────────────────

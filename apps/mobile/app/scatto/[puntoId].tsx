@@ -158,39 +158,89 @@ export default function ScattoScreen() {
 
     const isAndroid10 = Platform.OS === "android" && (Platform.Version as number) >= 29;
 
-    try {
-      // ── 1. Scatto via BLE (nessun WiFi necessario) ────────────────────────
-      setTakingStep("Scatto...");
-      await takePictureViaBle();
-      setTakingStep("Scatto completato. Download foto...");
+    // Helper: assicura WiFi camera connesso (necessario per getState/download)
+    const ensureWifi = async () => {
+      if (!isAndroid10) return;
+      const alreadyConnected = await isCameraWifiConnected();
+      if (!alreadyConnected) {
+        const { ssid, password } = await getCameraCredentials();
+        if (ssid) await connectToCamera(ssid, password ?? "");
+      }
+    };
 
-      // ── 2. Connetti WiFi solo se non già connesso ─────────────────────────
-      // stopStream() mantiene il WiFi attivo: spesso non serve riconnettersi.
-      if (isAndroid10) {
-        const alreadyConnected = await isCameraWifiConnected();
-        if (!alreadyConnected) {
-          const { ssid, password } = await getCameraCredentials();
-          if (ssid) await connectToCamera(ssid, password ?? "");
+    // Helper: pollinga _latestFileUrl finché non cambia rispetto al baseline
+    // Ritorna la nuova fileUrl, o null se timeout.
+    const pollForNewPhoto = async (
+      baselineUrl: string | null | undefined,
+      maxMs: number
+    ): Promise<string | null> => {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const s = await ricohClient.getState();
+          const url = s.state._latestFileUrl;
+          if (url && url !== baselineUrl) return url;
+        } catch {
+          // transient WiFi error — ignora e riprova
         }
       }
+      return null;
+    };
 
-      // ── 3. Leggi stato camera: _latestFileUrl + batteria + errori ────────
-      // getState() è più veloce di listFiles(1) e non ha il rischio di
-      // freeze thumbnail della SC2. Otteniamo battery level gratis.
-      setTakingStep("Lettura stato camera...");
-      const camState = await ricohClient.getState();
-      const fileUrl = camState.state._latestFileUrl;
+    try {
+      // ── 0. Snapshot stato pre-scatto (per detectare nuovi file) ──────────
+      setTakingStep("Preparazione...");
+      await ensureWifi();
+      let baselineUrl: string | null = null;
+      try {
+        const preState = await ricohClient.getState();
+        baselineUrl = preState.state._latestFileUrl ?? null;
+        setBatteryLevel(Math.round(preState.state.batteryLevel * 100));
+      } catch { /* ignora, useremo baseline null */ }
 
-      // Aggiorna badge batteria
-      setBatteryLevel(Math.round(camState.state.batteryLevel * 100));
+      // ── 1. Scatto via BLE (nessun WiFi necessario) ────────────────────────
+      setTakingStep("Scatto...");
+      let fileUrl: string | null = null;
+      try {
+        await takePictureViaBle();
+        setTakingStep("Scatto completato. Download foto...");
+      } catch (bleErr) {
+        // BLE timeout/fail: sulla SC2 l'antenna condivisa può perdere la
+        // notifica BLE anche quando la camera HA effettivamente scattato.
+        // Fallback: polling getState per verificare se c'è un nuovo file.
+        dlog("CAM", `BLE scatto fallito: ${bleErr instanceof Error ? bleErr.message : bleErr} — fallback polling WiFi`);
+        setTakingStep("Verifica stato camera...");
+        await ensureWifi();
+        const found = await pollForNewPhoto(baselineUrl, 25_000);
+        if (!found) throw bleErr; // rilancia l'errore BLE originale
+        fileUrl = found;
+        dlog("CAM", `Polling ha trovato nuovo file dopo timeout BLE: ${fileUrl}`);
+      }
 
+      // ── 2. Connetti WiFi per download (se non già fatto) ─────────────────
+      await ensureWifi();
+
+      // ── 3. Se non abbiamo già la fileUrl dal polling, leggi stato camera ─
       if (!fileUrl) {
-        // Prova a rilevare errori specifici dalla camera
-        const errorCode = camState.state._cameraError?.[0];
-        const errorMsg = errorCode
-          ? CAMERA_ERROR_MESSAGES[errorCode] ?? `Errore camera: ${errorCode}`
-          : "Nessun file trovato sulla camera — verifica che lo scatto sia andato a buon fine.";
-        throw new Error(errorMsg);
+        setTakingStep("Lettura stato camera...");
+        const camState = await ricohClient.getState();
+        fileUrl = camState.state._latestFileUrl ?? null;
+        setBatteryLevel(Math.round(camState.state.batteryLevel * 100));
+
+        // Se ancora non c'è, fai un po' di polling anche qui (scatto appena fatto
+        // potrebbe non essere indicizzato immediatamente)
+        if (!fileUrl || fileUrl === baselineUrl) {
+          fileUrl = await pollForNewPhoto(baselineUrl, 10_000);
+        }
+
+        if (!fileUrl) {
+          const errorCode = camState.state._cameraError?.[0];
+          const errorMsg = errorCode
+            ? CAMERA_ERROR_MESSAGES[errorCode] ?? `Errore camera: ${errorCode}`
+            : "Nessun file trovato sulla camera — verifica che lo scatto sia andato a buon fine.";
+          throw new Error(errorMsg);
+        }
       }
 
       setTakingStep("Download foto...");

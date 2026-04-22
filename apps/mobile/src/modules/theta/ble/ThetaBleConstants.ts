@@ -38,5 +38,7 @@ export const THETA_BLE_CHARACTERISTICS = {
 
 /** Scansione: filtra per nome device salvato in storage (es. "00101234") */
 export const BLE_SCAN_TIMEOUT_MS = 30_000;
-/** Timeout scatto: SC2 può impiegare fino a 10-15s */
-export const BLE_TAKE_PICTURE_TIMEOUT_MS = 60_000;
+/** Timeout scatto: SC2 scatta in 10-15s; se non arriva notify in 30s
+ * passiamo al fallback polling WiFi (la camera spesso ha scattato lo stesso
+ * ma l'antenna 2.4GHz condivisa BLE+WiFi fa perdere la notifica). */
+export const BLE_TAKE_PICTURE_TIMEOUT_MS = 30_000;

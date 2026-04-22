@@ -32,6 +32,7 @@ import {
   disconnectFromCamera,
   isCameraWifiConnected,
 } from "../services/ricoh/ThetaWifi";
+import { ricohClient } from "../services/ricoh/RicohClient";
 import ThetaPreviewNativeView from "./ThetaPreviewNativeView";
 import { colors, spacing, radius, typography } from "../lib/theme";
 
@@ -111,6 +112,13 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
           return;
         }
       }
+
+      // Forza preview format 1024x512@30fps (default su THETA V firmware < 2.21.1
+      // è 8fps — con questa chiamata abbiamo 30fps anche su firmware vecchi).
+      // SC2 ignora il framerate (supporta solo 30fps su 1024x512).
+      await ricohClient.trySetOptions({
+        previewFormat: { width: 1024, height: 512, framerate: 30 },
+      });
 
       removeListeners();
 

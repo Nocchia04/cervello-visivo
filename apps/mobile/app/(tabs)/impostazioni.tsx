@@ -197,6 +197,28 @@ export default function ImpostazioniScreen() {
         console.log('_bluetoothRole eccezione (ignorata):', e);
       }
 
+      // ── Step 3c: Imposta WiFi 5GHz (THETA V/Z1/X supportano, SC2 no) ──
+      // 5GHz aumenta drammaticamente la velocità di download foto.
+      // Soft-fail: se la camera non lo supporta (SC2), ignora.
+      setSetupStatusMsg('Configurazione WiFi 5GHz (se supportato)...');
+      try {
+        const wifiRes = await cameraFetch(
+          `${CAMERA_URL}/osc/commands/execute`,
+          'POST',
+          JSON.stringify({ name: 'camera.setOptions', parameters: { options: { _wlanFrequency: 5.0 } } })
+        );
+        if (wifiRes.status !== 200) {
+          console.log('_wlanFrequency 5GHz non supportato (SC2?):', wifiRes.status);
+        } else {
+          const wifiData = JSON.parse(wifiRes.body);
+          if (wifiData.state === 'error') {
+            console.log('_wlanFrequency 5GHz error (ignorato):', wifiData.error?.message);
+          }
+        }
+      } catch (e) {
+        console.log('_wlanFrequency eccezione (ignorata):', e);
+      }
+
       // ── Step 4: Disconnetti WiFi ──
       await disconnectFromCamera();
       setSetupStatusMsg('WiFi disconnesso. Cerco la camera via Bluetooth...');
