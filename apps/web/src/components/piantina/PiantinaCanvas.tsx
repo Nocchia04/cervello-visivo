@@ -3,7 +3,7 @@
 import { useRef, useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Check } from "lucide-react";
-import PuntoDiScattoMarker from "./PuntoDiScattoMarker";
+import PuntoDiScattoMarker, { type PuntoDateStatus } from "./PuntoDiScattoMarker";
 
 interface Foto {
   id: string;
@@ -31,6 +31,8 @@ interface PiantinaCanvasProps {
   /** Externally controlled edit mode (overrides internal state) */
   editModeExternal?: boolean;
   onEditModeChange?: (editing: boolean) => void;
+  /** Per-punto color hint based on the selected foto's date */
+  dateStatusByPuntoId?: Record<string, PuntoDateStatus>;
 }
 
 export default function PiantinaCanvas({
@@ -45,6 +47,7 @@ export default function PiantinaCanvas({
   leftClickPans,
   editModeExternal,
   onEditModeChange,
+  dateStatusByPuntoId,
 }: PiantinaCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -215,6 +218,7 @@ export default function PiantinaCanvas({
               isSelected={selectedPuntoId === punto.id}
               editMode={isEditMode}
               isDragging={draggingPuntoId === punto.id}
+              dateStatus={dateStatusByPuntoId?.[punto.id]}
               onClick={() =>
                 onPuntoClick ? onPuntoClick(punto.id) : router.push(`/dashboard/punti/${punto.id}`)
               }

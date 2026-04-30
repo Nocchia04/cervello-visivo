@@ -44,3 +44,6 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+#aws-keys
+Cervello-visivo-server.pem

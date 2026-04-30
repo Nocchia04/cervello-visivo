@@ -1,37 +1,35 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Animated } from "react-native";
+import { View, Text, StyleSheet, Animated, ActivityIndicator } from "react-native";
 import { uploadQueue } from "../services/upload/UploadQueue";
 import { uploadWorker } from "../services/upload/UploadWorker";
 import { colors, spacing, radius, typography } from "../lib/theme";
 
 export function UploadQueueBadge() {
   const [count, setCount] = useState(0);
+  const [dots, setDots] = useState("");
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const prevCount = useRef(0);
 
   useEffect(() => {
-    // Get initial count
     uploadQueue.getPendingCount().then(setCount);
-
-    // Subscribe to worker updates
     const unsubscribe = uploadWorker.subscribe(setCount);
     return unsubscribe;
   }, []);
 
+  // Animazione puntini "." → ".." → "..." → "" ciclico
   useEffect(() => {
-    // Animate on count change
+    if (count === 0) return;
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length >= 3 ? "" : prev + "."));
+    }, 450);
+    return () => clearInterval(interval);
+  }, [count]);
+
+  useEffect(() => {
     if (count !== prevCount.current && count > 0) {
       Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.2,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 150,
-          useNativeDriver: true,
-        }),
+        Animated.timing(scaleAnim, { toValue: 1.2, duration: 150, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
       ]).start();
     }
     prevCount.current = count;
@@ -41,12 +39,12 @@ export function UploadQueueBadge() {
 
   return (
     <Animated.View style={[styles.badge, { transform: [{ scale: scaleAnim }] }]}>
-      <Text style={styles.uploadIcon}>⬆</Text>
+      <ActivityIndicator size="small" color={colors.warning} style={styles.spinner} />
       <View style={styles.countCircle}>
         <Text style={styles.countText}>{count}</Text>
       </View>
       <Text style={styles.badgeLabel}>
-        {count === 1 ? "foto in coda" : "foto in coda"}
+        Caricamento foto in corso{dots}
       </Text>
     </Animated.View>
   );
@@ -62,9 +60,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     gap: 6,
   },
-  uploadIcon: {
-    fontSize: 12,
-    color: colors.warning,
+  spinner: {
+    marginLeft: -2,
   },
   countCircle: {
     backgroundColor: colors.warning,

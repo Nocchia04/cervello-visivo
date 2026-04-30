@@ -473,15 +473,15 @@ export default function ScattoScreen() {
         {/* Upload queue card */}
         {pendingCount > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Coda Upload</Text>
+            <Text style={styles.sectionLabel}>Caricamento foto in corso</Text>
             <View style={styles.queueCard}>
               <View style={styles.queueLeft}>
-                <Feather name="upload-cloud" size={20} color={colors.warning} />
+                <ActivityIndicator size="small" color={colors.warning} />
                 <View style={styles.queueTextGroup}>
                   <Text style={styles.queueCount}>
                     {pendingCount} {pendingCount === 1 ? "foto" : "foto"}
                   </Text>
-                  <Text style={styles.queueSubtext}>in attesa di upload</Text>
+                  <Text style={styles.queueSubtext}>upload in corso...</Text>
                 </View>
               </View>
               <TouchableOpacity

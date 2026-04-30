@@ -1,5 +1,7 @@
 "use client";
 
+export type PuntoDateStatus = "same" | "before" | "after";
+
 interface PuntoDiScattoMarkerProps {
   id: string;
   nome: string;
@@ -10,6 +12,8 @@ interface PuntoDiScattoMarkerProps {
   isSelected?: boolean;
   editMode?: boolean;
   isDragging?: boolean;
+  /** Color hint based on selected foto's day. Undefined → fallback green (or grey if empty) */
+  dateStatus?: PuntoDateStatus;
   onClick: () => void;
   onMarkerMouseDown?: (e: React.MouseEvent) => void;
 }
@@ -23,9 +27,19 @@ export default function PuntoDiScattoMarker({
   isSelected,
   editMode,
   isDragging,
+  dateStatus,
   onClick,
   onMarkerMouseDown,
 }: PuntoDiScattoMarkerProps) {
+  const bodyColor =
+    fotoCount === 0
+      ? "#8888aa"
+      : dateStatus === "after"
+      ? "#60a5fa"
+      : dateStatus === "before"
+      ? "#f87171"
+      : "#22c55e";
+
   return (
     <div
       className="absolute group"
@@ -47,9 +61,9 @@ export default function PuntoDiScattoMarker({
       <div
         className="relative flex items-center justify-center w-8 h-8 rounded-full transition-all duration-150"
         style={{
-          background: isSelected ? "#6366f1" : fotoCount > 0 ? "#22c55e" : "#8888aa",
+          background: bodyColor,
           boxShadow: isSelected
-            ? "0 0 0 3px rgba(99,102,241,0.4), 0 4px 12px rgba(0,0,0,0.4)"
+            ? "0 0 0 3px rgba(99,102,241,0.45), 0 4px 12px rgba(0,0,0,0.4)"
             : "0 2px 8px rgba(0,0,0,0.4)",
           transform: isDragging ? "scale(1.2)" : "scale(1)",
           outline: editMode ? "2px dashed rgba(255,255,255,0.5)" : "none",

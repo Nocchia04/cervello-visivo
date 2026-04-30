@@ -419,12 +419,96 @@ export default function PiantinaPage() {
   const [minimapCollapsed, setMinimapCollapsed] = useState(false);
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const [compareDateDropdownOpen, setCompareDateDropdownOpen] = useState(false);
+  const [widgetDateDropdownOpen, setWidgetDateDropdownOpen] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [annotationCount, setAnnotationCount] = useState(0);
   const [confirmDeletePuntoId, setConfirmDeletePuntoId] = useState<string | null>(null);
   const [renamingPunto, setRenamingPunto] = useState(false);
   const [renamingPuntoValue, setRenamingPuntoValue] = useState("");
   const [editingPositions, setEditingPositions] = useState(false);
+
+  // ── Resizable minimap panel ────────────────────────────────────────────────
+  const PANEL_MIN_W = 240;
+  const PANEL_MIN_H = 320;
+  const PANEL_DEFAULT_W = 280;
+  const PANEL_DEFAULT_H = 480;
+  const PANEL_STORAGE_KEY = "piantina-minimap-size";
+
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W);
+  const [panelHeight, setPanelHeight] = useState(PANEL_DEFAULT_H);
+  const resizeRef = useRef<{
+    mode: "right" | "bottom" | "corner";
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
+
+  // Hydrate panel size from localStorage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(PANEL_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { w?: number; h?: number };
+      if (typeof parsed.w === "number") setPanelWidth(parsed.w);
+      if (typeof parsed.h === "number") setPanelHeight(parsed.h);
+    } catch {
+      // ignore corrupt entry
+    }
+  }, []);
+
+  // Persist on change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      PANEL_STORAGE_KEY,
+      JSON.stringify({ w: panelWidth, h: panelHeight })
+    );
+  }, [panelWidth, panelHeight]);
+
+  const startResize = useCallback(
+    (mode: "right" | "bottom" | "corner") =>
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizeRef.current = {
+          mode,
+          startX: e.clientX,
+          startY: e.clientY,
+          startW: panelWidth,
+          startH: panelHeight,
+        };
+
+        const onMove = (ev: MouseEvent) => {
+          const r = resizeRef.current;
+          if (!r) return;
+          const maxW = Math.max(PANEL_MIN_W, window.innerWidth - 40);
+          const maxH = Math.max(PANEL_MIN_H, window.innerHeight - 40);
+          if (r.mode === "right" || r.mode === "corner") {
+            const w = Math.min(maxW, Math.max(PANEL_MIN_W, r.startW + (ev.clientX - r.startX)));
+            setPanelWidth(w);
+          }
+          if (r.mode === "bottom" || r.mode === "corner") {
+            const h = Math.min(maxH, Math.max(PANEL_MIN_H, r.startH + (ev.clientY - r.startY)));
+            setPanelHeight(h);
+          }
+        };
+        const onUp = () => {
+          resizeRef.current = null;
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          document.body.style.userSelect = "";
+          document.body.style.cursor = "";
+        };
+        document.body.style.userSelect = "none";
+        document.body.style.cursor =
+          mode === "right" ? "ew-resize" : mode === "bottom" ? "ns-resize" : "nwse-resize";
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      },
+    [panelWidth, panelHeight]
+  );
 
   // ── Compare rotation sync refs ─────────────────────────────────────────────
   const leftViewerRef = useRef<SyncedViewer360Handle>(null);
@@ -487,6 +571,32 @@ export default function PiantinaPage() {
 
   const currentFoto = selectedFotoSorted[selectedFotoIndex] ?? null;
   const currentCompareFoto = selectedFotoSorted[compareFotoIndex] ?? null;
+
+  // ── Per-punto date status (relative to selected foto's calendar day) ──────
+  const dateStatusByPuntoId = useMemo<Record<string, "same" | "before" | "after">>(() => {
+    if (!currentFoto) return {};
+    const ref = safeDate(currentFoto.timestamp);
+    const refKey = `${ref.getFullYear()}-${ref.getMonth()}-${ref.getDate()}`;
+
+    const result: Record<string, "same" | "before" | "after"> = {};
+    for (const punto of puntiDiScatto) {
+      if (punto.foto360.length === 0) continue;
+      let hasSame = false;
+      let hasBefore = false;
+      let hasAfter = false;
+      for (const f of punto.foto360) {
+        const d = safeDate(f.timestamp);
+        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        if (key === refKey) hasSame = true;
+        else if (d.getTime() < ref.getTime()) hasBefore = true;
+        else hasAfter = true;
+      }
+      if (hasSame) result[punto.id] = "same";
+      else if (hasAfter) result[punto.id] = "after";
+      else if (hasBefore) result[punto.id] = "before";
+    }
+    return result;
+  }, [puntiDiScatto, currentFoto]);
 
   // ── Auto-select on open: find punto with most recent foto360 ──────────────
   useEffect(() => {
@@ -900,7 +1010,7 @@ export default function PiantinaPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          Floating Minimap Panel — top left
+          Floating Minimap Panel — top left (resizable)
           ═══════════════════════════════════════════════════════════════════ */}
       <div
         style={{
@@ -908,7 +1018,10 @@ export default function PiantinaPage() {
           top: 12,
           left: 12,
           zIndex: 30,
-          width: 260,
+          width: panelWidth,
+          height: minimapCollapsed ? undefined : panelHeight,
+          display: "flex",
+          flexDirection: "column",
           background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
           borderRadius: 10,
@@ -927,6 +1040,7 @@ export default function PiantinaPage() {
               : "1px solid var(--border)",
             borderRadius: minimapCollapsed ? 10 : "10px 10px 0 0",
             background: "rgba(255,255,255,0.95)",
+            flexShrink: 0,
           }}
         >
           <Link
@@ -966,11 +1080,12 @@ export default function PiantinaPage() {
 
         {!minimapCollapsed && (
           <>
-            {/* Piantina minimap — always square */}
+            {/* Piantina minimap — flex-grow to fill remaining height */}
             <div
               style={{
                 width: "100%",
-                aspectRatio: "1 / 1",
+                flex: 1,
+                minHeight: 0,
                 overflow: "hidden",
                 borderBottom: "1px solid var(--border)",
                 position: "relative",
@@ -989,12 +1104,13 @@ export default function PiantinaPage() {
                 leftClickPans
                 editModeExternal={editingPositions}
                 onEditModeChange={setEditingPositions}
+                dateStatusByPuntoId={dateStatusByPuntoId}
               />
             </div>
 
             {/* Selected punto info + date dropdown */}
             {selectedPunto && (
-              <div style={{ padding: "6px 10px", borderRadius: "0 0 10px 10px", background: "rgba(255,255,255,0.95)" }}>
+              <div style={{ padding: "6px 10px", borderRadius: "0 0 10px 10px", background: "rgba(255,255,255,0.95)", flexShrink: 0 }}>
                 <div
                   style={{
                     display: "flex",
@@ -1089,15 +1205,66 @@ export default function PiantinaPage() {
                     fotos={selectedFotoSorted}
                     selectedIndex={selectedFotoIndex}
                     onSelect={setSelectedFotoIndex}
-                    open={dateDropdownOpen && !isCompareSplit}
+                    open={widgetDateDropdownOpen}
                     onToggle={() =>
-                      setDateDropdownOpen(!dateDropdownOpen)
+                      setWidgetDateDropdownOpen(!widgetDateDropdownOpen)
                     }
                     onDelete={handleDeleteFoto}
                   />
                 )}
               </div>
             )}
+          </>
+        )}
+
+        {/* ── Resize handles (only when expanded) ───────────────────────── */}
+        {!minimapCollapsed && (
+          <>
+            {/* Right edge — width only */}
+            <div
+              onMouseDown={startResize("right")}
+              title="Trascina per ridimensionare la larghezza"
+              style={{
+                position: "absolute",
+                top: 6,
+                bottom: 14,
+                right: -3,
+                width: 8,
+                cursor: "ew-resize",
+                zIndex: 5,
+              }}
+            />
+            {/* Bottom edge — height only */}
+            <div
+              onMouseDown={startResize("bottom")}
+              title="Trascina per ridimensionare l'altezza"
+              style={{
+                position: "absolute",
+                left: 6,
+                right: 14,
+                bottom: -3,
+                height: 8,
+                cursor: "ns-resize",
+                zIndex: 5,
+              }}
+            />
+            {/* Bottom-right corner — free resize */}
+            <div
+              onMouseDown={startResize("corner")}
+              title="Trascina per ridimensionare liberamente"
+              style={{
+                position: "absolute",
+                right: 0,
+                bottom: 0,
+                width: 16,
+                height: 16,
+                cursor: "nwse-resize",
+                zIndex: 6,
+                background:
+                  "linear-gradient(135deg, transparent 0%, transparent 55%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.25) 65%, transparent 65%, transparent 75%, rgba(0,0,0,0.25) 75%, rgba(0,0,0,0.25) 85%, transparent 85%)",
+                borderBottomRightRadius: 10,
+              }}
+            />
           </>
         )}
       </div>
