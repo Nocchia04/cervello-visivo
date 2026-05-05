@@ -23,6 +23,8 @@ import {
   ActivityIndicator,
   Platform,
   TouchableOpacity,
+  UIManager,
+  findNodeHandle,
 } from "react-native";
 import type { EmitterSubscription } from "react-native";
 import {
@@ -59,10 +61,29 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
 
     const wifiLostRef = useRef<EmitterSubscription | null>(null);
     const streamActiveRef = useRef(false);
+    const nativeViewRef = useRef<any>(null);
 
     const removeListeners = useCallback(() => {
       wifiLostRef.current?.remove();
       wifiLostRef.current = null;
+    }, []);
+
+    /**
+     * Chiude IMMEDIATAMENTE la socket TCP del MJPEG via command nativo.
+     * Bypassa il React render → prop dispatch round-trip che lascia la
+     * camera streamare frame inutilmente per qualche frame extra,
+     * occupando la banda WiFi 2.4GHz prima del download (critico su SC2).
+     */
+    const dispatchNativeStopPreview = useCallback(() => {
+      if (Platform.OS !== "android") return;
+      const tag = findNodeHandle(nativeViewRef.current);
+      if (tag == null) return;
+      try {
+        UIManager.dispatchViewManagerCommand(tag, "stopPreview", []);
+      } catch {
+        // command non registrato (es. build non aggiornata) — fallback è
+        // comunque la prop change isStreaming=false gestita più sotto
+      }
     }, []);
 
     // ── stopStream ──────────────────────────────────────────────────────────
@@ -70,20 +91,29 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
     const stopStream = useCallback(async () => {
       if (!streamActiveRef.current) return;
       streamActiveRef.current = false;
+      // 1) Chiudi subito la socket TCP nativa (immediato)
+      dispatchNativeStopPreview();
+      // 2) Aggiorna state React (declarativo, per UI)
       setStreaming(false);
       setFirstFrame(false);
       removeListeners();
-    }, [removeListeners]);
+      // 3) Grace period per dare alla camera il tempo di finalizzare la
+      // chiusura dello stream e svuotare il buffer TX. Su SC2 (banda
+      // 2.4GHz condivisa) anche solo 250ms cambiano sensibilmente la
+      // velocità del download successivo. Innocuo per V/SC2_B.
+      await new Promise<void>((r) => setTimeout(r, 250));
+    }, [removeListeners, dispatchNativeStopPreview]);
 
     // ── cleanup ─────────────────────────────────────────────────────────────
 
     const cleanup = useCallback(async () => {
       streamActiveRef.current = false;
+      dispatchNativeStopPreview();
       setStreaming(false);
       setFirstFrame(false);
       removeListeners();
       await disconnectFromCamera().catch(() => {});
-    }, [removeListeners]);
+    }, [removeListeners, dispatchNativeStopPreview]);
 
     // ── startStream ─────────────────────────────────────────────────────────
 
@@ -175,6 +205,7 @@ const RicohPreviewInner = forwardRef<RicohPreviewHandle, RicohPreviewProps>(
       <View style={styles.container}>
         {/* SurfaceView nativa — frame JPEG renderizzati direttamente su Canvas */}
         <ThetaPreviewNativeView
+          ref={nativeViewRef}
           isStreaming={streaming && !error}
           style={styles.frame}
           onFirstFrame={() => setFirstFrame(true)}

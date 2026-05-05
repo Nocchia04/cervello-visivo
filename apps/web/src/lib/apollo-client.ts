@@ -14,7 +14,7 @@ const isProd = process.env.NODE_ENV === "production";
 
 const httpLink = new HttpLink({
   uri: process.env.NEXT_PUBLIC_GRAPHQL_URL ??
-    (isProd ? "https://holobuilder-api.aitalia-test.it/graphql" : "http://localhost:4000/graphql"),
+    (isProd ? "https://api.holobuilderino.com/graphql" : "http://localhost:4000/graphql"),
 });
 
 const authLink = setContext((_, { headers }) => {
@@ -32,7 +32,7 @@ const wsLink =
     ? new GraphQLWsLink(
         createClient({
           url: process.env.NEXT_PUBLIC_WS_URL ??
-            (isProd ? "wss://holobuilder-api.aitalia-test.it/graphql" : "ws://localhost:4000/graphql"),
+            (isProd ? "wss://api.holobuilderino.com/graphql" : "ws://localhost:4000/graphql"),
           connectionParams: () => ({
             authorization: getToken() ? `Bearer ${getToken()}` : "",
           }),

@@ -14,7 +14,7 @@ function getServerHost(): string {
   return metroHost ?? "localhost";
 }
 
-const PROD_SERVER = "https://holobuilder-api.aitalia-test.it";
+const PROD_SERVER = "https://api.holobuilderino.com";
 
 /**
  * Riscrive gli URL salvati dal server (es. "http://localhost:4000/uploads/...")
@@ -25,5 +25,6 @@ export function resolveMediaUrl(url: string | null | undefined): string {
   if (!url) return "";
   return url
     .replace(/http:\/\/localhost(:\d+)?/g, PROD_SERVER)
-    .replace(/http:\/\/127\.0\.0\.1(:\d+)?/g, PROD_SERVER);
+    .replace(/http:\/\/127\.0\.0\.1(:\d+)?/g, PROD_SERVER)
+    .replace(/https?:\/\/holobuilder-api\.aitalia-test\.it/g, PROD_SERVER);
 }

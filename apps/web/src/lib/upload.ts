@@ -1,7 +1,7 @@
 export const SERVER_URL =
   process.env.NEXT_PUBLIC_SERVER_URL ??
   (process.env.NODE_ENV === "production"
-    ? "https://holobuilder-api.aitalia-test.it"
+    ? "https://api.holobuilderino.com"
     : "http://localhost:4000");
 
 export function getImageDimensions(

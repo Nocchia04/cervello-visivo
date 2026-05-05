@@ -1,36 +1,22 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@apollo/client";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
-  Plus,
   Upload,
   Camera,
   Columns2,
-  ChevronDown,
-  ChevronUp,
-  Check,
+  Maximize2,
   MapPin,
-  Trash2,
-  Pencil,
-  X,
   Lock,
   Unlock,
 } from "lucide-react";
-import Link from "next/link";
 import dynamic from "next/dynamic";
-import PiantinaCanvas from "@/components/piantina/PiantinaCanvas";
+import PiantinaFullScreenModal from "@/components/piantina/PiantinaFullScreenModal";
+import DateDropdown from "@/components/piantina/DateDropdown";
 import { GET_PIANTINA } from "@/graphql/queries";
-import {
-  AGGIUNGI_PUNTO_DI_SCATTO,
-  SPOSTA_PUNTO_DI_SCATTO,
-  UPLOAD_FOTO360,
-  ELIMINA_PUNTO_DI_SCATTO,
-  RINOMINA_PUNTO_DI_SCATTO,
-  ELIMINA_FOTO360,
-} from "@/graphql/mutations";
+import { UPLOAD_FOTO360, ELIMINA_FOTO360 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
 
@@ -86,12 +72,11 @@ function findClosestFotoIndex(fotos: Foto[], referenceTs: string): number {
 function sortFotoDesc(fotos: Foto[]): Foto[] {
   return [...fotos].sort((a, b) => {
     const diff = safeDate(b.timestamp).getTime() - safeDate(a.timestamp).getTime();
-    // Tiebreaker by ID for stable order when timestamps are equal
     return diff !== 0 ? diff : a.id.localeCompare(b.id);
   });
 }
 
-// ─── Upload Foto Button (floating pill style) ─────────────────────────────────
+// ─── Upload Foto Button ─────────────────────────────────────────────────────────
 
 function UploadFotoButton({
   puntoId,
@@ -197,368 +182,66 @@ function UploadFotoButton({
   );
 }
 
-// ─── Date Dropdown ─────────────────────────────────────────────────────────────
-
-function DateDropdown({
-  fotos,
-  selectedIndex,
-  onSelect,
-  open,
-  onToggle,
-  onDelete,
-  openUpward,
-  darkTheme,
-}: {
-  fotos: Foto[];
-  selectedIndex: number;
-  onSelect: (index: number) => void;
-  open: boolean;
-  onToggle: () => void;
-  onDelete?: (fotoId: string) => void;
-  openUpward?: boolean;
-  darkTheme?: boolean;
-}) {
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const currentFoto = fotos[selectedIndex];
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        onToggle();
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open, onToggle]);
-
-  if (fotos.length === 0) return null;
-
-  return (
-    <div ref={dropdownRef} style={{ position: "relative" }}>
-      <button
-        onClick={onToggle}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-          padding: "8px 10px",
-          background: "transparent",
-          border: darkTheme ? "1px solid rgba(255,255,255,0.2)" : "1px solid var(--border)",
-          borderRadius: 10,
-          cursor: "pointer",
-          fontSize: 12,
-          fontWeight: 500,
-          color: darkTheme ? "#fff" : "var(--text)",
-        }}
-      >
-        <span style={{ flex: 1, textAlign: "left" }}>
-          {currentFoto
-            ? `${safeDate(currentFoto.timestamp).toLocaleDateString("it-IT", {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-              })} ${safeDate(currentFoto.timestamp).toLocaleTimeString("it-IT", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })} (#${selectedIndex + 1})`
-            : "Seleziona data"}
-        </span>
-        <ChevronDown
-          className="w-3.5 h-3.5"
-          style={{
-            color: "var(--text-muted)",
-            transition: "transform 0.15s",
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
-          }}
-        />
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            ...(openUpward
-              ? { bottom: "100%", marginBottom: 4 }
-              : { top: "100%", marginTop: 4 }),
-            left: 0,
-            right: 0,
-            background: "rgba(255,255,255,0.98)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-            maxHeight: 200,
-            overflowY: "auto",
-            zIndex: 50,
-          }}
-        >
-          {fotos.map((foto, idx) => (
-            <div
-              key={foto.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                width: "100%",
-                padding: "6px 10px",
-                background:
-                  idx === selectedIndex ? "var(--surface-hover)" : "transparent",
-                borderBottom:
-                  idx < fotos.length - 1
-                    ? "1px solid var(--border)"
-                    : "none",
-                fontSize: 12,
-                color: "var(--text)",
-              }}
-            >
-              <button
-                onClick={() => {
-                  onSelect(idx);
-                  onToggle();
-                }}
-                style={{
-                  flex: 1,
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  color: "var(--text)",
-                  textAlign: "left",
-                  padding: 0,
-                }}
-              >
-                <span style={{ color: "var(--text-muted)", marginRight: 4, minWidth: 18, display: "inline-block" }}>#{idx + 1}</span>
-                {safeDate(foto.timestamp).toLocaleDateString("it-IT", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })}
-                {" "}
-                <span style={{ color: "var(--text-muted)" }}>
-                  {safeDate(foto.timestamp).toLocaleTimeString("it-IT", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })}
-                </span>
-              </button>
-              {idx === selectedIndex && (
-                <Check className="w-3 h-3 flex-shrink-0" style={{ color: "#6366f1" }} />
-              )}
-              {onDelete && (
-                confirmDeleteId === foto.id ? (
-                  <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDelete(foto.id); setConfirmDeleteId(null); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                      title="Conferma"
-                    >
-                      <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                      title="Annulla"
-                    >
-                      <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(foto.id); }}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
-                    title="Elimina foto"
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
-                  >
-                    <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
-                  </button>
-                )
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PiantinaPage() {
   const params = useParams();
   const piantinaId = params.piantinaId as string;
-  const cantiereId = params.id as string;
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // ── Core viewer state ──────────────────────────────────────────────────────
-  const [selectedPuntoId, setSelectedPuntoId] = useState<string | null>(null);
-  const [selectedFotoIndex, setSelectedFotoIndex] = useState(0);
+  // ── URL-driven state (single source of truth, shared with sidebar widget) ──
+  const selectedPuntoId = searchParams.get("punto");
+  const selectedFotoIndex = parseInt(searchParams.get("foto") ?? "0", 10) || 0;
+  const compareMode = searchParams.get("cmp") === "1";
+  const compareFotoIndex = parseInt(searchParams.get("cmpFoto") ?? "0", 10) || 0;
+  const leftLocked = searchParams.get("lockL") === "1";
+  const rightLocked = searchParams.get("lockR") === "1";
 
-  // ── Compare mode (same punto, two dates) ───────────────────────────────────
-  const [compareMode, setCompareMode] = useState(false);
-  const [compareFotoIndex, setCompareFotoIndex] = useState(0);
-  const [leftLocked, setLeftLocked] = useState(false);
-  const [rightLocked, setRightLocked] = useState(false);
+  const updateParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null) params.delete(key);
+        else params.set(key, value);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `?${qs}` : "?", { scroll: false });
+    },
+    [router, searchParams]
+  );
 
-  // ── Add punto flow ─────────────────────────────────────────────────────────
-  const [addingPunto, setAddingPunto] = useState(false);
-  const [nuovoPuntoNome, setNuovoPuntoNome] = useState("");
-  const [pendingCoords, setPendingCoords] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  // ── UI state ───────────────────────────────────────────────────────────────
-  const [minimapCollapsed, setMinimapCollapsed] = useState(false);
-  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
-  const [compareDateDropdownOpen, setCompareDateDropdownOpen] = useState(false);
-  const [widgetDateDropdownOpen, setWidgetDateDropdownOpen] = useState(false);
+  // ── Local UI state (transient, no need in URL) ────────────────────────────
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [annotationCount, setAnnotationCount] = useState(0);
-  const [confirmDeletePuntoId, setConfirmDeletePuntoId] = useState<string | null>(null);
-  const [renamingPunto, setRenamingPunto] = useState(false);
-  const [renamingPuntoValue, setRenamingPuntoValue] = useState("");
-  const [editingPositions, setEditingPositions] = useState(false);
-
-  // ── Resizable minimap panel ────────────────────────────────────────────────
-  const PANEL_MIN_W = 240;
-  const PANEL_MIN_H = 320;
-  const PANEL_DEFAULT_W = 280;
-  const PANEL_DEFAULT_H = 480;
-  const PANEL_STORAGE_KEY = "piantina-minimap-size";
-
-  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W);
-  const [panelHeight, setPanelHeight] = useState(PANEL_DEFAULT_H);
-  const resizeRef = useRef<{
-    mode: "right" | "bottom" | "corner";
-    startX: number;
-    startY: number;
-    startW: number;
-    startH: number;
-  } | null>(null);
-
-  // Hydrate panel size from localStorage on mount
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(PANEL_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { w?: number; h?: number };
-      if (typeof parsed.w === "number") setPanelWidth(parsed.w);
-      if (typeof parsed.h === "number") setPanelHeight(parsed.h);
-    } catch {
-      // ignore corrupt entry
-    }
-  }, []);
-
-  // Persist on change
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      PANEL_STORAGE_KEY,
-      JSON.stringify({ w: panelWidth, h: panelHeight })
-    );
-  }, [panelWidth, panelHeight]);
-
-  const startResize = useCallback(
-    (mode: "right" | "bottom" | "corner") =>
-      (e: React.MouseEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resizeRef.current = {
-          mode,
-          startX: e.clientX,
-          startY: e.clientY,
-          startW: panelWidth,
-          startH: panelHeight,
-        };
-
-        const onMove = (ev: MouseEvent) => {
-          const r = resizeRef.current;
-          if (!r) return;
-          const maxW = Math.max(PANEL_MIN_W, window.innerWidth - 40);
-          const maxH = Math.max(PANEL_MIN_H, window.innerHeight - 40);
-          if (r.mode === "right" || r.mode === "corner") {
-            const w = Math.min(maxW, Math.max(PANEL_MIN_W, r.startW + (ev.clientX - r.startX)));
-            setPanelWidth(w);
-          }
-          if (r.mode === "bottom" || r.mode === "corner") {
-            const h = Math.min(maxH, Math.max(PANEL_MIN_H, r.startH + (ev.clientY - r.startY)));
-            setPanelHeight(h);
-          }
-        };
-        const onUp = () => {
-          resizeRef.current = null;
-          window.removeEventListener("mousemove", onMove);
-          window.removeEventListener("mouseup", onUp);
-          document.body.style.userSelect = "";
-          document.body.style.cursor = "";
-        };
-        document.body.style.userSelect = "none";
-        document.body.style.cursor =
-          mode === "right" ? "ew-resize" : mode === "bottom" ? "ns-resize" : "nwse-resize";
-        window.addEventListener("mousemove", onMove);
-        window.addEventListener("mouseup", onUp);
-      },
-    [panelWidth, panelHeight]
-  );
+  const [compareDateDropdownOpen, setCompareDateDropdownOpen] = useState(false);
+  const [dateDropdownOpenLeft, setDateDropdownOpenLeft] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // ── Compare rotation sync refs ─────────────────────────────────────────────
   const leftViewerRef = useRef<SyncedViewer360Handle>(null);
   const rightViewerRef = useRef<SyncedViewer360Handle>(null);
-
-  // ── Tracks whether we've done auto-select already ──────────────────────────
-  const autoSelectedRef = useRef(false);
 
   // ── GraphQL ────────────────────────────────────────────────────────────────
   const { data, loading, refetch } = useQuery(GET_PIANTINA, {
     variables: { id: piantinaId },
   });
 
-  const [aggiungiPunto] = useMutation(AGGIUNGI_PUNTO_DI_SCATTO, {
-    onCompleted: () => {
-      refetch();
-      setPendingCoords(null);
-      setNuovoPuntoNome("");
-      setAddingPunto(false);
-    },
-  });
-
-  const [spostaPunto] = useMutation(SPOSTA_PUNTO_DI_SCATTO, {
-    onCompleted: () => refetch(),
-  });
-
-  const [eliminaPunto] = useMutation(ELIMINA_PUNTO_DI_SCATTO, {
-    onCompleted: () => {
-      refetch();
-      if (selectedPuntoId === confirmDeletePuntoId) setSelectedPuntoId(null);
-      setConfirmDeletePuntoId(null);
-    },
-  });
-
-  const [rinominaPunto] = useMutation(RINOMINA_PUNTO_DI_SCATTO, {
-    onCompleted: () => { refetch(); setRenamingPunto(false); },
-  });
-
   const [eliminaFoto] = useMutation(ELIMINA_FOTO360, {
     onCompleted: () => refetch(),
   });
 
-  const handleDeleteFoto = useCallback((fotoId: string) => {
-    eliminaFoto({ variables: { id: fotoId } });
-  }, [eliminaFoto]);
+  const handleDeleteFoto = useCallback(
+    (fotoId: string) => {
+      eliminaFoto({ variables: { id: fotoId } });
+    },
+    [eliminaFoto]
+  );
 
   const piantina = data?.piantina;
   const puntiDiScatto: Punto[] = piantina?.puntiDiScatto ?? [];
 
-  // ── Derived data ───────────────────────────────────────────────────────────
   const selectedPunto = useMemo(
     () => puntiDiScatto.find((p) => p.id === selectedPuntoId) ?? null,
     [puntiDiScatto, selectedPuntoId]
@@ -572,206 +255,103 @@ export default function PiantinaPage() {
   const currentFoto = selectedFotoSorted[selectedFotoIndex] ?? null;
   const currentCompareFoto = selectedFotoSorted[compareFotoIndex] ?? null;
 
-  // ── Per-punto date status (relative to selected foto's calendar day) ──────
-  const dateStatusByPuntoId = useMemo<Record<string, "same" | "before" | "after">>(() => {
-    if (!currentFoto) return {};
-    const ref = safeDate(currentFoto.timestamp);
-    const refKey = `${ref.getFullYear()}-${ref.getMonth()}-${ref.getDate()}`;
-
-    const result: Record<string, "same" | "before" | "after"> = {};
-    for (const punto of puntiDiScatto) {
-      if (punto.foto360.length === 0) continue;
-      let hasSame = false;
-      let hasBefore = false;
-      let hasAfter = false;
-      for (const f of punto.foto360) {
-        const d = safeDate(f.timestamp);
-        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-        if (key === refKey) hasSame = true;
-        else if (d.getTime() < ref.getTime()) hasBefore = true;
-        else hasAfter = true;
-      }
-      if (hasSame) result[punto.id] = "same";
-      else if (hasAfter) result[punto.id] = "after";
-      else if (hasBefore) result[punto.id] = "before";
-    }
-    return result;
-  }, [puntiDiScatto, currentFoto]);
-
-  // ── Auto-select on open: find punto with most recent foto360 ──────────────
+  // ── Auto-select most recent punto with photos on mount (if none selected) ─
   useEffect(() => {
-    if (autoSelectedRef.current || puntiDiScatto.length === 0) return;
-
+    if (selectedPuntoId || puntiDiScatto.length === 0) return;
     let bestPunto: Punto | null = null;
     let bestTime = -Infinity;
-
-    for (const punto of puntiDiScatto) {
-      for (const foto of punto.foto360) {
-        const t = safeDate(foto.timestamp).getTime();
+    for (const p of puntiDiScatto) {
+      for (const f of p.foto360) {
+        const t = safeDate(f.timestamp).getTime();
         if (t > bestTime) {
           bestTime = t;
-          bestPunto = punto;
+          bestPunto = p;
         }
       }
     }
+    const target = bestPunto ?? puntiDiScatto[0];
+    if (target) updateParams({ punto: target.id, foto: "0" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puntiDiScatto.length]);
 
-    if (bestPunto && bestPunto.foto360.length > 0) {
-      setSelectedPuntoId(bestPunto.id);
-      setSelectedFotoIndex(0); // newest first (sortFotoDesc is used in the memo)
-      autoSelectedRef.current = true;
+  // ── Fullscreen toggle ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
     } else {
-      // No photos at all — just select the first punto
-      setSelectedPuntoId(puntiDiScatto[0].id);
-      autoSelectedRef.current = true;
+      document.exitFullscreen();
     }
-  }, [puntiDiScatto]);
-
-  // ── Handlers ───────────────────────────────────────────────────────────────
-
-  const handleCanvasClick = useCallback(
-    (x: number, y: number) => {
-      if (addingPunto) {
-        setPendingCoords({ x, y });
-      }
-    },
-    [addingPunto]
-  );
-
-  const handlePuntoClick = useCallback(
-    (puntoId: string) => {
-      // If adding punto, cancel and select instead
-      if (addingPunto) {
-        setAddingPunto(false);
-        setPendingCoords(null);
-      }
-
-      // Smart date following: when switching punto, find closest date
-      if (puntoId !== selectedPuntoId) {
-        const punto = puntiDiScatto.find((p) => p.id === puntoId);
-        if (punto && punto.foto360.length > 0 && currentFoto) {
-          const sorted = sortFotoDesc(punto.foto360);
-          const idx = findClosestFotoIndex(sorted, currentFoto.timestamp);
-          setSelectedFotoIndex(idx >= 0 ? idx : 0);
-        } else {
-          setSelectedFotoIndex(0);
-        }
-        setSelectedPuntoId(puntoId);
-        // Reset compare index when switching punto
-        if (compareMode) setCompareFotoIndex(Math.min(1, (punto?.foto360.length ?? 1) - 1));
-      }
-    },
-    [
-      addingPunto,
-      selectedPuntoId,
-      currentFoto,
-      puntiDiScatto,
-      compareMode,
-    ]
-  );
-
-  const handleDragEnd = useCallback(
-    (puntoId: string, newX: number, newY: number) => {
-      spostaPunto({ variables: { id: puntoId, x: newX, y: newY } });
-    },
-    [spostaPunto]
-  );
-
-  const handleAddPunto = () => {
-    if (!pendingCoords || !nuovoPuntoNome.trim()) return;
-    aggiungiPunto({
-      variables: {
-        piantinaId,
-        nome: nuovoPuntoNome.trim(),
-        x: pendingCoords.x,
-        y: pendingCoords.y,
-      },
-    });
-  };
+  }
 
   const handleToggleCompare = () => {
     if (compareMode) {
-      setCompareMode(false);
-      setCompareFotoIndex(0);
-      setLeftLocked(false);
-      setRightLocked(false);
+      updateParams({ cmp: null, cmpFoto: null, lockL: null, lockR: null });
     } else {
-      // Enter compare mode — pick a different foto than the current one
-      setCompareMode(true);
       const nextIdx = selectedFotoIndex === 0 ? 1 : 0;
-      setCompareFotoIndex(selectedFotoSorted.length > 1 ? nextIdx : 0);
+      const newCmpIdx = selectedFotoSorted.length > 1 ? nextIdx : 0;
+      updateParams({ cmp: "1", cmpFoto: String(newCmpIdx) });
     }
   };
 
-  // Keep locked state in refs so rotation handlers can read current values
+  // ── Compare locks: keep last-known position in refs ───────────────────────
   const leftLockedRef = useRef(false);
   const rightLockedRef = useRef(false);
   useEffect(() => { leftLockedRef.current = leftLocked; }, [leftLocked]);
   useEffect(() => { rightLockedRef.current = rightLocked; }, [rightLocked]);
 
-  // Track last-known position of each side in parent state.
-  // Updated on every drag — serves as source of truth across lock toggles.
   const lastLeftPosRef = useRef({ lon: 0, lat: 0 });
   const lastRightPosRef = useRef({ lon: 0, lat: 0 });
 
-  // Sync rotation: left drives right (unless right is locked).
-  // Uses DELTA instead of absolute position so that if the two sides
-  // are desynced (e.g. after a lock), the other side follows the movement
-  // without jumping to match absolute position.
-  const handleLeftRotate = useCallback(
-    (lon: number, lat: number) => {
-      const deltaLon = lon - lastLeftPosRef.current.lon;
-      const deltaLat = lat - lastLeftPosRef.current.lat;
-      lastLeftPosRef.current = { lon, lat };
-      if (rightLockedRef.current) return;
-      const rightCurrent = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
-      const newRightLon = rightCurrent.lon + deltaLon;
-      const newRightLat = Math.max(-85, Math.min(85, rightCurrent.lat + deltaLat));
-      rightViewerRef.current?.setCamera(newRightLon, newRightLat);
-      lastRightPosRef.current = { lon: newRightLon, lat: newRightLat };
-    },
-    []
-  );
+  const handleLeftRotate = useCallback((lon: number, lat: number) => {
+    const deltaLon = lon - lastLeftPosRef.current.lon;
+    const deltaLat = lat - lastLeftPosRef.current.lat;
+    lastLeftPosRef.current = { lon, lat };
+    if (rightLockedRef.current) return;
+    const rightCurrent = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
+    const newRightLon = rightCurrent.lon + deltaLon;
+    const newRightLat = Math.max(-85, Math.min(85, rightCurrent.lat + deltaLat));
+    rightViewerRef.current?.setCamera(newRightLon, newRightLat);
+    lastRightPosRef.current = { lon: newRightLon, lat: newRightLat };
+  }, []);
 
-  // Sync rotation: right drives left (unless left is locked). Uses delta.
-  const handleRightRotate = useCallback(
-    (lon: number, lat: number) => {
-      const deltaLon = lon - lastRightPosRef.current.lon;
-      const deltaLat = lat - lastRightPosRef.current.lat;
-      lastRightPosRef.current = { lon, lat };
-      if (leftLockedRef.current) return;
-      const leftCurrent = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
-      const newLeftLon = leftCurrent.lon + deltaLon;
-      const newLeftLat = Math.max(-85, Math.min(85, leftCurrent.lat + deltaLat));
-      leftViewerRef.current?.setCamera(newLeftLon, newLeftLat);
-      lastLeftPosRef.current = { lon: newLeftLon, lat: newLeftLat };
-    },
-    []
-  );
+  const handleRightRotate = useCallback((lon: number, lat: number) => {
+    const deltaLon = lon - lastRightPosRef.current.lon;
+    const deltaLat = lat - lastRightPosRef.current.lat;
+    lastRightPosRef.current = { lon, lat };
+    if (leftLockedRef.current) return;
+    const leftCurrent = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
+    const newLeftLon = leftCurrent.lon + deltaLon;
+    const newLeftLat = Math.max(-85, Math.min(85, leftCurrent.lat + deltaLat));
+    leftViewerRef.current?.setCamera(newLeftLon, newLeftLat);
+    lastLeftPosRef.current = { lon: newLeftLon, lat: newLeftLat };
+  }, []);
 
-  // Toggle lock preserving camera positions on both sides.
-  const toggleLockPreservingPositions = useCallback(
-    (side: "left" | "right") => {
-      const leftNow = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
-      const rightNow = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
-      lastLeftPosRef.current = leftNow;
-      lastRightPosRef.current = rightNow;
-
-      if (side === "left") setLeftLocked((v) => !v);
-      else setRightLocked((v) => !v);
-
-      requestAnimationFrame(() => {
-        leftViewerRef.current?.setCamera(leftNow.lon, leftNow.lat);
-        rightViewerRef.current?.setCamera(rightNow.lon, rightNow.lat);
-      });
-    },
-    []
-  );
+  const toggleLockPreservingPositions = useCallback((side: "left" | "right") => {
+    const leftNow = leftViewerRef.current?.getCamera() ?? lastLeftPosRef.current;
+    const rightNow = rightViewerRef.current?.getCamera() ?? lastRightPosRef.current;
+    lastLeftPosRef.current = leftNow;
+    lastRightPosRef.current = rightNow;
+    if (side === "left") updateParams({ lockL: leftLocked ? null : "1" });
+    else updateParams({ lockR: rightLocked ? null : "1" });
+    requestAnimationFrame(() => {
+      leftViewerRef.current?.setCamera(leftNow.lon, leftNow.lat);
+      rightViewerRef.current?.setCamera(rightNow.lon, rightNow.lat);
+    });
+  }, [leftLocked, rightLocked, updateParams]);
 
   // ── Loading state ──────────────────────────────────────────────────────────
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center" style={{ height: "100vh", margin: "-40px", background: "#000" }}>
+      <div
+        className="flex items-center justify-center"
+        style={{ height: "100vh", margin: "-40px", background: "#000" }}
+      >
         <div
           className="animate-spin rounded-full h-8 w-8 border-b-2"
           style={{ borderColor: "var(--accent)" }}
@@ -790,6 +370,7 @@ export default function PiantinaPage() {
 
   return (
     <div
+      ref={containerRef}
       style={{
         position: "relative",
         height: "100vh",
@@ -800,7 +381,7 @@ export default function PiantinaPage() {
       }}
     >
       {/* ═══════════════════════════════════════════════════════════════════════
-          360 Viewer Area — fills entire container
+          360 Viewer Area — full container
           ═══════════════════════════════════════════════════════════════════ */}
 
       {hasCurrentFoto && !isCompareSplit && (
@@ -808,7 +389,7 @@ export default function PiantinaPage() {
           <EmbeddedViewer360
             foto={selectedFotoSorted}
             currentIndex={selectedFotoIndex}
-            onIndexChange={setSelectedFotoIndex}
+            onIndexChange={(idx) => updateParams({ foto: String(idx) })}
             hideTimeTravelPanel
             hideNoteButton
             addingNoteExternal={addingNote}
@@ -836,7 +417,6 @@ export default function PiantinaPage() {
               onRotate={handleLeftRotate}
               locked={leftLocked}
             />
-            {/* Left label with lock button */}
             <div
               style={{
                 position: "absolute",
@@ -849,7 +429,6 @@ export default function PiantinaPage() {
                 gap: 6,
               }}
             >
-              {/* Lock toggle (above label) */}
               <button
                 onClick={() => toggleLockPreservingPositions("left")}
                 title={leftLocked ? "Sblocca vista sinistra" : "Blocca vista sinistra"}
@@ -889,9 +468,9 @@ export default function PiantinaPage() {
                 <DateDropdown
                   fotos={selectedFotoSorted}
                   selectedIndex={selectedFotoIndex}
-                  onSelect={setSelectedFotoIndex}
-                  open={dateDropdownOpen}
-                  onToggle={() => setDateDropdownOpen(!dateDropdownOpen)}
+                  onSelect={(idx) => updateParams({ foto: String(idx) })}
+                  open={dateDropdownOpenLeft}
+                  onToggle={() => setDateDropdownOpenLeft(!dateDropdownOpenLeft)}
                   onDelete={handleDeleteFoto}
                   openUpward
                   darkTheme
@@ -908,7 +487,6 @@ export default function PiantinaPage() {
               onRotate={handleRightRotate}
               locked={rightLocked}
             />
-            {/* Right label with lock button */}
             <div
               style={{
                 position: "absolute",
@@ -960,11 +538,9 @@ export default function PiantinaPage() {
                 <DateDropdown
                   fotos={selectedFotoSorted}
                   selectedIndex={compareFotoIndex}
-                  onSelect={setCompareFotoIndex}
+                  onSelect={(idx) => updateParams({ cmpFoto: String(idx) })}
                   open={compareDateDropdownOpen}
-                  onToggle={() =>
-                    setCompareDateDropdownOpen(!compareDateDropdownOpen)
-                  }
+                  onToggle={() => setCompareDateDropdownOpen(!compareDateDropdownOpen)}
                   onDelete={handleDeleteFoto}
                   openUpward
                   darkTheme
@@ -975,7 +551,7 @@ export default function PiantinaPage() {
         </div>
       )}
 
-      {/* Empty state — no foto selected */}
+      {/* Empty state */}
       {!hasCurrentFoto && !isCompareSplit && (
         <div
           style={{
@@ -1004,270 +580,10 @@ export default function PiantinaPage() {
             Nessuna foto 360 disponibile
           </p>
           <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
-            Seleziona un punto con foto o carica una nuova foto
+            Seleziona un punto dalla mappa nel sidebar o carica una nuova foto
           </p>
         </div>
       )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════
-          Floating Minimap Panel — top left (resizable)
-          ═══════════════════════════════════════════════════════════════════ */}
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          left: 12,
-          zIndex: 30,
-          width: panelWidth,
-          height: minimapCollapsed ? undefined : panelHeight,
-          display: "flex",
-          flexDirection: "column",
-          background: "rgba(255,255,255,0.95)",
-          backdropFilter: "blur(12px)",
-          borderRadius: 10,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
-        }}
-      >
-        {/* Minimap header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "6px 10px",
-            borderBottom: minimapCollapsed
-              ? "none"
-              : "1px solid var(--border)",
-            borderRadius: minimapCollapsed ? 10 : "10px 10px 0 0",
-            background: "rgba(255,255,255,0.95)",
-            flexShrink: 0,
-          }}
-        >
-          <Link
-            href={`/dashboard/cantieri/${cantiereId}`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              color: "var(--text)",
-              textDecoration: "none",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            {piantina.nome}
-          </Link>
-          <button
-            onClick={() => setMinimapCollapsed(!minimapCollapsed)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 4,
-              display: "flex",
-              alignItems: "center",
-              color: "var(--text-muted)",
-            }}
-          >
-            {minimapCollapsed ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronUp className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-
-        {!minimapCollapsed && (
-          <>
-            {/* Piantina minimap — flex-grow to fill remaining height */}
-            <div
-              style={{
-                width: "100%",
-                flex: 1,
-                minHeight: 0,
-                overflow: "hidden",
-                borderBottom: "1px solid var(--border)",
-                position: "relative",
-              }}
-            >
-              <PiantinaCanvas
-                piantinaId={piantinaId}
-                fileUrl={piantina.fileUrl}
-                larghezza={piantina.larghezza}
-                altezza={piantina.altezza}
-                puntiDiScatto={puntiDiScatto}
-                selectedPuntoId={selectedPuntoId}
-                onPuntoDragEnd={handleDragEnd}
-                onCanvasClick={handleCanvasClick}
-                onPuntoClick={handlePuntoClick}
-                leftClickPans
-                editModeExternal={editingPositions}
-                onEditModeChange={setEditingPositions}
-                dateStatusByPuntoId={dateStatusByPuntoId}
-              />
-            </div>
-
-            {/* Selected punto info + date dropdown */}
-            {selectedPunto && (
-              <div style={{ padding: "6px 10px", borderRadius: "0 0 10px 10px", background: "rgba(255,255,255,0.95)", flexShrink: 0 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    marginBottom: 4,
-                  }}
-                >
-                  {renamingPunto ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1 }}>
-                      <input
-                        style={{
-                          flex: 1,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          border: "1px solid var(--border)",
-                          borderRadius: 4,
-                          padding: "1px 4px",
-                          outline: "none",
-                          minWidth: 0,
-                        }}
-                        value={renamingPuntoValue}
-                        onChange={(e) => setRenamingPuntoValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && renamingPuntoValue.trim()) {
-                            rinominaPunto({ variables: { id: selectedPunto.id, nome: renamingPuntoValue.trim() } });
-                          }
-                          if (e.key === "Escape") setRenamingPunto(false);
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => { if (renamingPuntoValue.trim()) rinominaPunto({ variables: { id: selectedPunto.id, nome: renamingPuntoValue.trim() } }); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                      >
-                        <Check className="w-3 h-3" style={{ color: "#22c55e" }} />
-                      </button>
-                      <button
-                        onClick={() => setRenamingPunto(false)}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                      >
-                        <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
-                        {selectedPunto.nome}
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
-                        {selectedPunto.foto360.length} foto
-                      </span>
-                      <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
-                        <button
-                          onClick={() => { setRenamingPunto(true); setRenamingPuntoValue(selectedPunto.nome); }}
-                          title="Rinomina punto"
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                        >
-                          <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                        </button>
-                        {confirmDeletePuntoId === selectedPunto.id ? (
-                          <>
-                            <button
-                              onClick={() => eliminaPunto({ variables: { id: selectedPunto.id } })}
-                              title="Conferma eliminazione"
-                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                            >
-                              <Check className="w-3 h-3" style={{ color: "var(--danger, #ef4444)" }} />
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeletePuntoId(null)}
-                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                            >
-                              <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDeletePuntoId(selectedPunto.id)}
-                            title="Elimina punto"
-                            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                          >
-                            <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-                {selectedFotoSorted.length > 0 && (
-                  <DateDropdown
-                    fotos={selectedFotoSorted}
-                    selectedIndex={selectedFotoIndex}
-                    onSelect={setSelectedFotoIndex}
-                    open={widgetDateDropdownOpen}
-                    onToggle={() =>
-                      setWidgetDateDropdownOpen(!widgetDateDropdownOpen)
-                    }
-                    onDelete={handleDeleteFoto}
-                  />
-                )}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ── Resize handles (only when expanded) ───────────────────────── */}
-        {!minimapCollapsed && (
-          <>
-            {/* Right edge — width only */}
-            <div
-              onMouseDown={startResize("right")}
-              title="Trascina per ridimensionare la larghezza"
-              style={{
-                position: "absolute",
-                top: 6,
-                bottom: 14,
-                right: -3,
-                width: 8,
-                cursor: "ew-resize",
-                zIndex: 5,
-              }}
-            />
-            {/* Bottom edge — height only */}
-            <div
-              onMouseDown={startResize("bottom")}
-              title="Trascina per ridimensionare l'altezza"
-              style={{
-                position: "absolute",
-                left: 6,
-                right: 14,
-                bottom: -3,
-                height: 8,
-                cursor: "ns-resize",
-                zIndex: 5,
-              }}
-            />
-            {/* Bottom-right corner — free resize */}
-            <div
-              onMouseDown={startResize("corner")}
-              title="Trascina per ridimensionare liberamente"
-              style={{
-                position: "absolute",
-                right: 0,
-                bottom: 0,
-                width: 16,
-                height: 16,
-                cursor: "nwse-resize",
-                zIndex: 6,
-                background:
-                  "linear-gradient(135deg, transparent 0%, transparent 55%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.25) 65%, transparent 65%, transparent 75%, rgba(0,0,0,0.25) 75%, rgba(0,0,0,0.25) 85%, transparent 85%)",
-                borderBottomRightRadius: 10,
-              }}
-            />
-          </>
-        )}
-      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
           Floating Toolbar — top right
@@ -1283,6 +599,30 @@ export default function PiantinaPage() {
           alignItems: "flex-start",
         }}
       >
+        {/* Open piantina full-screen */}
+        <button
+          onClick={() => updateParams({ map: "1" })}
+          title="Apri piantina"
+          style={{
+            background: "rgba(0,0,0,0.6)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 999,
+            padding: "8px 16px",
+            fontSize: 13,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            cursor: "pointer",
+            backdropFilter: "blur(8px)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Maximize2 className="w-4 h-4" />
+          Mappa
+        </button>
+
         {/* Note button */}
         {hasCurrentFoto && !isCompareSplit && (
           <button
@@ -1333,68 +673,37 @@ export default function PiantinaPage() {
           {compareMode ? "Esci confronto" : "Confronta"}
         </button>
 
-        {/* Add punto button */}
-        <button
-          onClick={() => {
-            setAddingPunto(!addingPunto);
-            setPendingCoords(null);
-            if (!addingPunto) {
-              setCompareMode(false);
-            }
-          }}
-          style={{
-            background: addingPunto ? "#6366f1" : "rgba(0,0,0,0.6)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 999,
-            padding: "8px 16px",
-            fontSize: 13,
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            cursor: "pointer",
-            backdropFilter: "blur(8px)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <Plus className="w-4 h-4" />
-          Aggiungi punto
-        </button>
-
-        {/* Edit positions button */}
-        <button
-          onClick={() => setEditingPositions(!editingPositions)}
-          style={{
-            background: editingPositions ? "#6366f1" : "rgba(0,0,0,0.6)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 999,
-            padding: "8px 16px",
-            fontSize: 13,
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            cursor: "pointer",
-            backdropFilter: "blur(8px)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <Pencil className="w-4 h-4" />
-          {editingPositions ? "Fine" : "Modifica"}
-        </button>
-
-        {/* Upload foto button */}
+        {/* Upload foto */}
         {selectedPuntoId && (
           <div style={{ position: "relative" }}>
             <UploadFotoButton puntoId={selectedPuntoId} onDone={() => refetch()} />
           </div>
         )}
+
+        {/* Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Esci fullscreen" : "Schermo intero"}
+          style={{
+            background: "rgba(0,0,0,0.6)",
+            border: "none",
+            borderRadius: 999,
+            width: 36,
+            height: 36,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#fff",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          Hint banners — centered top
+          Hint banners
           ═══════════════════════════════════════════════════════════════════ */}
 
       {/* Compare mode needs at least 2 photos hint */}
@@ -1420,105 +729,10 @@ export default function PiantinaPage() {
         </div>
       )}
 
-      {/* Adding punto hint */}
-      {addingPunto && !pendingCoords && (
-        <div
-          style={{
-            position: "absolute",
-            top: 60,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 40,
-            background: "rgba(99,102,241,0.9)",
-            backdropFilter: "blur(8px)",
-            borderRadius: 999,
-            padding: "8px 20px",
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            whiteSpace: "nowrap",
-          }}
-        >
-          <Plus className="w-4 h-4" />
-          Clicca sulla piantina per posizionare il punto
-          <button
-            onClick={() => {
-              setAddingPunto(false);
-              setPendingCoords(null);
-            }}
-            style={{
-              background: "rgba(255,255,255,0.2)",
-              border: "none",
-              borderRadius: 999,
-              padding: "2px 8px",
-              color: "#fff",
-              fontSize: 11,
-              cursor: "pointer",
-              marginLeft: 4,
-            }}
-          >
-            Annulla
-          </button>
-        </div>
-      )}
-
       {/* ═══════════════════════════════════════════════════════════════════════
-          Add punto dialog
+          Piantina full-screen modal (shared via URL ?map=1)
           ═══════════════════════════════════════════════════════════════════ */}
-      {addingPunto && pendingCoords && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.6)" }}
-        >
-          <div className="card w-full max-w-sm">
-            <h3 className="font-semibold mb-4">Nuovo punto di scatto</h3>
-            <p
-              className="text-sm mb-4"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Posizione: {pendingCoords.x.toFixed(1)}%,{" "}
-              {pendingCoords.y.toFixed(1)}%
-            </p>
-            <input
-              type="text"
-              className="input-field mb-4"
-              placeholder="Nome del punto (es. Cucina, Salone...)"
-              value={nuovoPuntoNome}
-              onChange={(e) => setNuovoPuntoNome(e.target.value)}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAddPunto();
-                if (e.key === "Escape") {
-                  setPendingCoords(null);
-                  setAddingPunto(false);
-                }
-              }}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setPendingCoords(null);
-                  setAddingPunto(false);
-                }}
-                className="btn-secondary flex-1"
-              >
-                Annulla
-              </button>
-              <button
-                onClick={handleAddPunto}
-                className="btn-primary flex-1"
-                disabled={!nuovoPuntoNome.trim()}
-              >
-                <Plus className="w-4 h-4" />
-                Aggiungi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PiantinaFullScreenModal piantinaId={piantinaId} />
     </div>
   );
 }

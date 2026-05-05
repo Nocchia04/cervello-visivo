@@ -6,6 +6,10 @@ import { useQuery } from "@apollo/client";
 import { LayoutDashboard, Building2, ShieldCheck, LogOut, Camera } from "lucide-react";
 import { ME } from "@/graphql/queries";
 import { removeToken } from "@/lib/auth";
+import PiantinaSidebarWidget from "@/components/piantina/PiantinaSidebarWidget";
+
+// Match: /dashboard/cantieri/<cantiereId>/piantina/<piantinaId>
+const PIANTINA_PATH_RE = /^\/dashboard\/cantieri\/([^/]+)\/piantina\/([^/]+)\/?$/;
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -22,6 +26,12 @@ export default function Sidebar() {
   const isAdmin = user?.role === "ADMIN";
 
   const items = isAdmin ? [...navItems, adminItem] : navItems;
+
+  // Detect if we're inside a piantina detail page → show widget
+  const piantinaMatch = pathname.match(PIANTINA_PATH_RE);
+  const piantinaContext = piantinaMatch
+    ? { cantiereId: piantinaMatch[1], piantinaId: piantinaMatch[2] }
+    : null;
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -70,31 +80,45 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 overflow-y-auto">
-        <p className="section-label px-2 mb-2">Navigazione</p>
-        <ul className="flex flex-col gap-0.5">
-          {items.map(({ href, icon: Icon, label }) => {
-            const active = isActive(href);
-            return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
-                  style={{
-                    background: active ? "var(--surface-hover)" : "transparent",
-                    color: active ? "var(--text)" : "var(--text-muted)",
-                    fontWeight: active ? 600 : 400,
-                  }}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  {label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      {/* Nav + (optional) piantina widget — single scrollable region */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+        <nav className="px-3 pt-1 flex-shrink-0">
+          <p className="section-label px-2 mb-2">Navigazione</p>
+          <ul className="flex flex-col gap-0.5">
+            {items.map(({ href, icon: Icon, label }) => {
+              const active = isActive(href);
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
+                    style={{
+                      background: active ? "var(--surface-hover)" : "transparent",
+                      color: active ? "var(--text)" : "var(--text-muted)",
+                      fontWeight: active ? 600 : 400,
+                    }}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        {/* Spacer to push the widget to the bottom of the sidebar when present.
+            Without context, this just absorbs free space. */}
+        <div className="flex-1" />
+
+        {/* Piantina widget — only rendered when navigating inside a piantina */}
+        {piantinaContext && (
+          <PiantinaSidebarWidget
+            cantiereId={piantinaContext.cantiereId}
+            piantinaId={piantinaContext.piantinaId}
+          />
+        )}
+      </div>
 
       {/* Footer */}
       <div

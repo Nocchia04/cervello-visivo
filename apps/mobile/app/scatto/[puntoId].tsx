@@ -154,7 +154,10 @@ export default function ScattoScreen() {
 
     setIsTakingPicture(true);
     setTakingStep("");
-    previewRef.current?.stopStream();
+    // Aspetta che la socket MJPEG sia chiusa e la camera abbia liberato
+    // la banda WiFi (cruciale su SC2 con antenna 2.4GHz condivisa BLE+WiFi).
+    // Il grace period è già incluso dentro stopStream (~250ms).
+    await previewRef.current?.stopStream();
 
     const isAndroid10 = Platform.OS === "android" && (Platform.Version as number) >= 29;
 
@@ -198,6 +201,37 @@ export default function ScattoScreen() {
         baselineUrl = preState.state._latestFileUrl ?? null;
         setBatteryLevel(Math.round(preState.state.batteryLevel * 100));
       } catch { /* ignora, useremo baseline null */ }
+
+      // ── 0.5 Forza opzioni leggere prima dello scatto BLE ──────────────
+      //
+      // captureMode "image":
+      //   La SC2 dopo getLivePreview rimane in modalità _liveStreaming.
+      //   In quello stato, BLE TAKE_PICTURE viene interpretato come START
+      //   di un video ("Rec" sul display) e la notify 0x00 non arriva mai.
+      //   La V esce auto da _liveStreaming, quindi è no-op idempotente.
+      //   Rif: TethaDocs/theta-client tutorial-react-native.md — il client
+      //   ufficiale Ricoh chiama sempre setOptions{captureMode:"image"}.
+      //
+      // _filter "off":
+      //   Disabilita HDR / NoiseReduction post-processing che producono
+      //   file più grandi (e download più lenti). Specie sulla SC2 consumer
+      //   con preset LENS_BY_LENS_EXPOSURE di default, il filter pesante
+      //   può raddoppiare la dimensione del JPEG. La SC2 Business ha già
+      //   default più leggeri (preset ROOM).
+      //
+      // sleepDelay / offDelay 65535:
+      //   Disabilita sleep e auto-power-off durante la sessione. Sulla SC2
+      //   consumer (firmware standard) il sleep aggressivo riduce il
+      //   throughput WiFi al primo download dopo inattività.
+      //
+      // trySetOptions è soft-fail: opzioni non supportate da uno specifico
+      // modello/firmware vengono ignorate senza far crashare il flusso.
+      await ricohClient.trySetOptions({
+        captureMode: "image",
+        _filter: "off",
+        sleepDelay: 65535,
+        offDelay: 65535,
+      });
 
       // ── 1. Scatto via BLE (nessun WiFi necessario) ────────────────────────
       setTakingStep("Scatto...");
