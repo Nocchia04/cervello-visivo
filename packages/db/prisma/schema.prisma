@@ -31,10 +31,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  foto360      Foto360[]
-  annotazioni  Annotazione[]
-  cantieri     CantiereUser[]
-  inviti       Invito[]       @relation("InvitiCreati")
+  foto360       Foto360[]
+  annotazioni   Annotazione[]
+  cantieri      CantiereUser[]
+  inviti        Invito[]            @relation("InvitiCreati")
+  linkCondivisione LinkCondivisione[] @relation("LinkCondivisioneCreatore")
 
   @@map("users")
 }
@@ -48,8 +49,9 @@ model Cantiere {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  piantine  Piantina[]
-  utenti    CantiereUser[]
+  piantine          Piantina[]
+  utenti            CantiereUser[]
+  linkCondivisione  LinkCondivisione[]
 
   @@map("cantieri")
 }
@@ -144,4 +146,26 @@ model Invito {
   createdBy User @relation("InvitiCreati", fields: [createdById], references: [id])
 
   @@map("inviti")
+}
+
+// Link pubblico in sola lettura per condividere un cantiere all'esterno.
+// Ogni link ha un token univoco; lo stesso cantiere può avere più link attivi
+// (es. uno per cliente, uno per geometra). Revocabile e con scadenza opzionale.
+model LinkCondivisione {
+  id           String    @id @default(cuid())
+  token        String    @unique @default(cuid())
+  cantiereId   String
+  creatoDaId   String
+  expiresAt    DateTime?
+  revocato     Boolean   @default(false)
+  accessiCount Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  cantiere Cantiere @relation(fields: [cantiereId], references: [id], onDelete: Cascade)
+  creatoDa User     @relation("LinkCondivisioneCreatore", fields: [creatoDaId], references: [id], onDelete: Cascade)
+
+  @@index([cantiereId])
+  @@index([token])
+  @@map("link_condivisione")
 }

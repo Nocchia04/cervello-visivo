@@ -1,5 +1,6 @@
 import { GraphQLError } from "graphql";
 import type { GraphQLContext } from "../../context.js";
+import { assertCantiereVisible } from "../../utils/access.js";
 
 function requireAuth(ctx: GraphQLContext) {
   if (!ctx.user) {
@@ -57,7 +58,8 @@ export const cantiereResolvers = {
       args: { id: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
+      // Permette user JWT o share token che corrisponde al cantiere richiesto
+      assertCantiereVisible(ctx, args.id);
       return ctx.prisma.cantiere.findUnique({ where: { id: args.id } });
     },
   },

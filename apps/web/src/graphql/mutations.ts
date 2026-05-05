@@ -276,3 +276,34 @@ export const ELIMINA_FOTO360 = gql`
     }
   }
 `;
+
+export const CREA_LINK_CONDIVISIONE = gql`
+  mutation CreaLinkCondivisione($cantiereId: ID!, $durataGiorni: Int) {
+    creaLinkCondivisione(cantiereId: $cantiereId, durataGiorni: $durataGiorni) {
+      id
+      token
+      expiresAt
+      revocato
+      accessiCount
+      isExpired
+      createdAt
+    }
+  }
+`;
+
+export const REVOCA_LINK_CONDIVISIONE = gql`
+  mutation RevocaLinkCondivisione($id: ID!) {
+    revocaLinkCondivisione(id: $id) {
+      id
+      revocato
+    }
+  }
+`;
+
+export const ELIMINA_LINK_CONDIVISIONE = gql`
+  mutation EliminaLinkCondivisione($id: ID!) {
+    eliminaLinkCondivisione(id: $id) {
+      id
+    }
+  }
+`;

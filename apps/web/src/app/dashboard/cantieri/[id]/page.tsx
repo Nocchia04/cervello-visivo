@@ -13,6 +13,7 @@ import {
   Pencil,
   Archive,
   RotateCcw,
+  Share2,
 } from "lucide-react";
 import { GET_CANTIERE } from "@/graphql/queries";
 import {
@@ -23,6 +24,7 @@ import {
   RINOMINA_PIANTINA,
 } from "@/graphql/mutations";
 import CantiereBadge from "@/components/cantiere/CantiereBadge";
+import CondividiModal from "@/components/cantiere/CondividiModal";
 import { StatoCantiere } from "@cervello-visivo/shared";
 import { uploadFile, getImageDimensions } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
@@ -237,6 +239,7 @@ export default function CantiereDettaglioPage() {
   const [editNome, setEditNome] = useState("");
   const [editIndirizzo, setEditIndirizzo] = useState("");
   const [showCaricaModal, setShowCaricaModal] = useState(false);
+  const [showCondividiModal, setShowCondividiModal] = useState(false);
   const [renamingPiantinaId, setRenamingPiantinaId] = useState<string | null>(null);
   const [renamingPiantinaValue, setRenamingPiantinaValue] = useState("");
 
@@ -347,6 +350,14 @@ export default function CantiereDettaglioPage() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
               <CantiereBadge stato={cantiere.stato as StatoCantiere} />
+              <button
+                onClick={() => setShowCondividiModal(true)}
+                className="btn-ghost"
+                title="Genera link di sola visualizzazione"
+              >
+                <Share2 className="w-4 h-4" />
+                Condividi
+              </button>
               <button onClick={startEditing} className="btn-ghost">
                 <Pencil className="w-4 h-4" />
                 Modifica
@@ -532,6 +543,14 @@ export default function CantiereDettaglioPage() {
           cantiereId={cantiereId}
           onClose={() => setShowCaricaModal(false)}
           onSuccess={() => refetch()}
+        />
+      )}
+
+      {showCondividiModal && (
+        <CondividiModal
+          cantiereId={cantiereId}
+          cantiereNome={cantiere.nome}
+          onClose={() => setShowCondividiModal(false)}
         />
       )}
     </div>

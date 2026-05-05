@@ -12,17 +12,34 @@ import { getToken } from "./auth";
 
 const isProd = process.env.NODE_ENV === "production";
 
+/**
+ * Detect share mode dal pathname: `/share/<token>/...`.
+ * Quando attivo, l'auth header diventa `ShareLink <token>` invece di `Bearer <user-jwt>`.
+ * Side-effect-safe: ritorna null durante SSR (no `window`).
+ */
+function getShareTokenFromPath(): string | null {
+  if (typeof window === "undefined") return null;
+  const m = window.location.pathname.match(/^\/share\/([^/?#]+)/);
+  return m ? m[1] : null;
+}
+
+function getAuthHeaderValue(): string {
+  const shareToken = getShareTokenFromPath();
+  if (shareToken) return `ShareLink ${shareToken}`;
+  const userToken = getToken();
+  return userToken ? `Bearer ${userToken}` : "";
+}
+
 const httpLink = new HttpLink({
   uri: process.env.NEXT_PUBLIC_GRAPHQL_URL ??
     (isProd ? "https://api.holobuilderino.com/graphql" : "http://localhost:4000/graphql"),
 });
 
 const authLink = setContext((_, { headers }) => {
-  const token = getToken();
   return {
     headers: {
       ...headers,
-      authorization: token ? `Bearer ${token}` : "",
+      authorization: getAuthHeaderValue(),
     },
   };
 });
@@ -34,7 +51,7 @@ const wsLink =
           url: process.env.NEXT_PUBLIC_WS_URL ??
             (isProd ? "wss://api.holobuilderino.com/graphql" : "ws://localhost:4000/graphql"),
           connectionParams: () => ({
-            authorization: getToken() ? `Bearer ${getToken()}` : "",
+            authorization: getAuthHeaderValue(),
           }),
         })
       )

@@ -6,10 +6,11 @@ import { piantinaResolvers } from "./resolvers/piantina.js";
 import { foto360Resolvers } from "./resolvers/foto360.js";
 import { annotazioneResolvers } from "./resolvers/annotazione.js";
 import { invitoResolvers } from "./resolvers/invito.js";
+import { linkCondivisioneResolvers } from "./resolvers/linkCondivisione.js";
 
 // Load .graphql type definition files
 const typeDefsDir = path.join(__dirname, "typeDefs");
-const graphqlFiles = ["auth", "cantiere", "piantina", "foto360", "annotazione", "invito"];
+const graphqlFiles = ["auth", "cantiere", "piantina", "foto360", "annotazione", "invito", "linkCondivisione"];
 
 export const typeDefs = graphqlFiles.map((name) =>
   fs.readFileSync(path.join(typeDefsDir, `${name}.graphql`), "utf-8")
@@ -37,5 +38,6 @@ export const resolvers = deepMergeResolvers(
   piantinaResolvers,
   foto360Resolvers,
   annotazioneResolvers,
-  invitoResolvers
+  invitoResolvers,
+  linkCondivisioneResolvers
 );

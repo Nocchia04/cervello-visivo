@@ -156,3 +156,41 @@ export const GET_UTENTI = gql`
     }
   }
 `;
+
+export const GET_LINK_CONDIVISIONE_CANTIERE = gql`
+  query GetLinkCondivisioneCantiere($cantiereId: ID!) {
+    linkCondivisioneCantiere(cantiereId: $cantiereId) {
+      id
+      token
+      expiresAt
+      revocato
+      accessiCount
+      isExpired
+      createdAt
+      creatoDa {
+        id
+        nome
+        cognome
+      }
+    }
+  }
+`;
+
+export const GET_LINK_CONDIVISIONE = gql`
+  query GetLinkCondivisione($token: String!) {
+    linkCondivisione(token: $token) {
+      id
+      token
+      cantiereId
+      expiresAt
+      revocato
+      isExpired
+      cantiere {
+        id
+        nome
+        indirizzo
+        thumbnailUrl
+      }
+    }
+  }
+`;

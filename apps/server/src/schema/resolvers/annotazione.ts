@@ -18,7 +18,22 @@ export const annotazioneResolvers = {
       args: { foto360Id: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
+      if (!ctx.user) {
+        // share-mode: verifica che la foto appartenga al cantiere condiviso
+        const foto = await ctx.prisma.foto360.findUnique({
+          where: { id: args.foto360Id },
+          include: { puntoDiScatto: { include: { piantina: { select: { cantiereId: true } } } } },
+        });
+        if (
+          !foto ||
+          !ctx.shareCantiereId ||
+          ctx.shareCantiereId !== foto.puntoDiScatto.piantina.cantiereId
+        ) {
+          throw new GraphQLError("Risorsa non disponibile", {
+            extensions: { code: ctx.shareCantiereId ? "FORBIDDEN" : "UNAUTHENTICATED" },
+          });
+        }
+      }
       return ctx.prisma.annotazione.findMany({
         where: { foto360Id: args.foto360Id },
         orderBy: { createdAt: "asc" },

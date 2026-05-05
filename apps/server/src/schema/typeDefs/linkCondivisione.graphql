@@ -1,0 +1,45 @@
+type LinkCondivisione {
+  id: ID!
+  token: String!
+  cantiereId: String!
+  cantiere: Cantiere
+  creatoDaId: String!
+  creatoDa: User
+  expiresAt: String
+  revocato: Boolean!
+  accessiCount: Int!
+  isExpired: Boolean!
+  createdAt: String!
+  updatedAt: String!
+}
+
+extend type Query {
+  """
+  Lista dei link di condivisione di un cantiere (admin).
+  """
+  linkCondivisioneCantiere(cantiereId: ID!): [LinkCondivisione!]!
+
+  """
+  Risolve un token pubblico — non richiede autenticazione.
+  Ritorna null se invalido / scaduto / revocato.
+  """
+  linkCondivisione(token: String!): LinkCondivisione
+}
+
+extend type Mutation {
+  """
+  Crea un nuovo link di sola visualizzazione per un cantiere.
+  durataGiorni null = link permanente (può essere revocato manualmente).
+  """
+  creaLinkCondivisione(cantiereId: ID!, durataGiorni: Int): LinkCondivisione!
+
+  """
+  Revoca un link senza eliminarlo (mantiene lo storico degli accessi).
+  """
+  revocaLinkCondivisione(id: ID!): LinkCondivisione!
+
+  """
+  Cancellazione definitiva del link.
+  """
+  eliminaLinkCondivisione(id: ID!): LinkCondivisione!
+}

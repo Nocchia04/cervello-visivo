@@ -17,7 +17,22 @@ export const foto360Resolvers = {
       args: { puntoId: string; dataInizio?: string; dataFine?: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
+      // user OR share-mode (verifica via cantiereId del punto)
+      if (!ctx.user) {
+        const punto = await ctx.prisma.puntoDiScatto.findUnique({
+          where: { id: args.puntoId },
+          include: { piantina: { select: { cantiereId: true } } },
+        });
+        if (
+          !punto ||
+          !ctx.shareCantiereId ||
+          ctx.shareCantiereId !== punto.piantina.cantiereId
+        ) {
+          throw new GraphQLError("Risorsa non disponibile", {
+            extensions: { code: ctx.shareCantiereId ? "FORBIDDEN" : "UNAUTHENTICATED" },
+          });
+        }
+      }
 
       const where: Record<string, unknown> = {
         puntoDiScattoId: args.puntoId,
@@ -41,8 +56,19 @@ export const foto360Resolvers = {
       args: { id: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
-      return ctx.prisma.foto360.findUnique({ where: { id: args.id } });
+      const foto = await ctx.prisma.foto360.findUnique({
+        where: { id: args.id },
+        include: { puntoDiScatto: { include: { piantina: { select: { cantiereId: true } } } } },
+      });
+      if (!foto) return null;
+      if (!ctx.user) {
+        if (!ctx.shareCantiereId || ctx.shareCantiereId !== foto.puntoDiScatto.piantina.cantiereId) {
+          throw new GraphQLError("Risorsa non disponibile", {
+            extensions: { code: ctx.shareCantiereId ? "FORBIDDEN" : "UNAUTHENTICATED" },
+          });
+        }
+      }
+      return foto;
     },
   },
 

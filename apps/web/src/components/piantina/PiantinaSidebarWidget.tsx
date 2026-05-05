@@ -25,6 +25,7 @@ import {
   SPOSTA_PUNTO_DI_SCATTO,
 } from "@/graphql/mutations";
 import { safeDate } from "@/lib/dateUtils";
+import { useIsReadOnly } from "@/lib/readOnly";
 
 interface Foto {
   id: string;
@@ -69,12 +70,13 @@ export default function PiantinaSidebarWidget({
 }: PiantinaSidebarWidgetProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isReadOnly = useIsReadOnly();
 
   // ── URL-driven state (single source of truth) ─────────────────────────────
   const selectedPuntoId = searchParams.get("punto");
   const selectedFotoIndex = parseInt(searchParams.get("foto") ?? "0", 10) || 0;
-  const addingPunto = searchParams.get("addP") === "1";
-  const editingPositions = searchParams.get("edit") === "1";
+  const addingPunto = !isReadOnly && searchParams.get("addP") === "1";
+  const editingPositions = !isReadOnly && searchParams.get("edit") === "1";
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -372,60 +374,62 @@ export default function PiantinaSidebarWidget({
 
         {!collapsed && (
           <>
-            {/* ── Mini-toolbar (add / edit) ────────────────────────────────── */}
-            <div
-              className="flex items-center gap-1 px-2 py-1.5"
-              style={{
-                background: "var(--surface)",
-                borderBottom: "1px solid var(--border)",
-                flexShrink: 0,
-              }}
-            >
-              <button
-                onClick={() => updateParams({ addP: addingPunto ? null : "1", edit: null })}
-                title={addingPunto ? "Annulla aggiunta" : "Aggiungi punto"}
+            {/* ── Mini-toolbar (add / edit) — solo per admin ──────────────── */}
+            {!isReadOnly && (
+              <div
+                className="flex items-center gap-1 px-2 py-1.5"
                 style={{
-                  flex: 1,
-                  background: addingPunto ? "#6366f1" : "transparent",
-                  border: addingPunto ? "1px solid #6366f1" : "1px solid var(--border)",
-                  color: addingPunto ? "#fff" : "var(--text-muted)",
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 4,
-                  cursor: "pointer",
+                  background: "var(--surface)",
+                  borderBottom: "1px solid var(--border)",
+                  flexShrink: 0,
                 }}
               >
-                <Plus className="w-3 h-3" />
-                {addingPunto ? "Annulla" : "Aggiungi"}
-              </button>
-              <button
-                onClick={() => updateParams({ edit: editingPositions ? null : "1", addP: null })}
-                title={editingPositions ? "Fine modifica" : "Modifica posizioni"}
-                style={{
-                  flex: 1,
-                  background: editingPositions ? "#6366f1" : "transparent",
-                  border: editingPositions ? "1px solid #6366f1" : "1px solid var(--border)",
-                  color: editingPositions ? "#fff" : "var(--text-muted)",
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 4,
-                  cursor: "pointer",
-                }}
-              >
-                <Pencil className="w-3 h-3" />
-                {editingPositions ? "Fine" : "Modifica"}
-              </button>
-            </div>
+                <button
+                  onClick={() => updateParams({ addP: addingPunto ? null : "1", edit: null })}
+                  title={addingPunto ? "Annulla aggiunta" : "Aggiungi punto"}
+                  style={{
+                    flex: 1,
+                    background: addingPunto ? "#6366f1" : "transparent",
+                    border: addingPunto ? "1px solid #6366f1" : "1px solid var(--border)",
+                    color: addingPunto ? "#fff" : "var(--text-muted)",
+                    borderRadius: 8,
+                    padding: "4px 8px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Plus className="w-3 h-3" />
+                  {addingPunto ? "Annulla" : "Aggiungi"}
+                </button>
+                <button
+                  onClick={() => updateParams({ edit: editingPositions ? null : "1", addP: null })}
+                  title={editingPositions ? "Fine modifica" : "Modifica posizioni"}
+                  style={{
+                    flex: 1,
+                    background: editingPositions ? "#6366f1" : "transparent",
+                    border: editingPositions ? "1px solid #6366f1" : "1px solid var(--border)",
+                    color: editingPositions ? "#fff" : "var(--text-muted)",
+                    borderRadius: 8,
+                    padding: "4px 8px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Pencil className="w-3 h-3" />
+                  {editingPositions ? "Fine" : "Modifica"}
+                </button>
+              </div>
+            )}
 
             {/* ── Canvas (flex-grow, supports pan/zoom) ───────────────────── */}
             <div
@@ -527,40 +531,42 @@ export default function PiantinaSidebarWidget({
                       <span className="text-xs flex-shrink-0" style={{ color: "var(--text-muted)" }}>
                         {selectedPunto.foto360.length} foto
                       </span>
-                      <div className="flex gap-0.5 flex-shrink-0">
-                        <button
-                          onClick={() => { setRenaming(true); setRenameValue(selectedPunto.nome); }}
-                          title="Rinomina"
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
-                        >
-                          <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                        </button>
-                        {confirmDeleteId === selectedPunto.id ? (
-                          <>
-                            <button
-                              onClick={() => eliminaPuntoMutation({ variables: { id: selectedPunto.id } })}
-                              title="Conferma elimina"
-                              style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
-                            >
-                              <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
-                            >
-                              <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                            </button>
-                          </>
-                        ) : (
+                      {!isReadOnly && (
+                        <div className="flex gap-0.5 flex-shrink-0">
                           <button
-                            onClick={() => setConfirmDeleteId(selectedPunto.id)}
-                            title="Elimina punto"
+                            onClick={() => { setRenaming(true); setRenameValue(selectedPunto.nome); }}
+                            title="Rinomina"
                             style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
                           >
-                            <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                            <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
                           </button>
-                        )}
-                      </div>
+                          {confirmDeleteId === selectedPunto.id ? (
+                            <>
+                              <button
+                                onClick={() => eliminaPuntoMutation({ variables: { id: selectedPunto.id } })}
+                                title="Conferma elimina"
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
+                              >
+                                <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
+                              >
+                                <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteId(selectedPunto.id)}
+                              title="Elimina punto"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
+                            >
+                              <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -572,7 +578,7 @@ export default function PiantinaSidebarWidget({
                     onSelect={(idx) => updateParams({ foto: String(idx) })}
                     open={dateOpen}
                     onToggle={() => setDateOpen(!dateOpen)}
-                    onDelete={handleDeleteFoto}
+                    onDelete={isReadOnly ? undefined : handleDeleteFoto}
                     openUpward
                   />
                 )}

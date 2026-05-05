@@ -17,7 +17,14 @@ export const piantinaResolvers = {
       args: { cantiereId: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
+      // user OR share-mode con cantiere matching
+      if (!ctx.user) {
+        if (!ctx.shareCantiereId || ctx.shareCantiereId !== args.cantiereId) {
+          throw new (require("graphql").GraphQLError)("Risorsa non disponibile", {
+            extensions: { code: ctx.shareCantiereId ? "FORBIDDEN" : "UNAUTHENTICATED" },
+          });
+        }
+      }
       return ctx.prisma.piantina.findMany({
         where: { cantiereId: args.cantiereId },
         orderBy: { livello: "asc" },
@@ -29,8 +36,16 @@ export const piantinaResolvers = {
       args: { id: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
-      return ctx.prisma.piantina.findUnique({ where: { id: args.id } });
+      const piantina = await ctx.prisma.piantina.findUnique({ where: { id: args.id } });
+      if (!piantina) return null;
+      if (!ctx.user) {
+        if (!ctx.shareCantiereId || ctx.shareCantiereId !== piantina.cantiereId) {
+          throw new (require("graphql").GraphQLError)("Risorsa non disponibile", {
+            extensions: { code: ctx.shareCantiereId ? "FORBIDDEN" : "UNAUTHENTICATED" },
+          });
+        }
+      }
+      return piantina;
     },
 
     puntoDiScatto: async (
@@ -38,8 +53,19 @@ export const piantinaResolvers = {
       args: { id: string },
       ctx: GraphQLContext
     ) => {
-      requireAuth(ctx);
-      return ctx.prisma.puntoDiScatto.findUnique({ where: { id: args.id } });
+      const punto = await ctx.prisma.puntoDiScatto.findUnique({
+        where: { id: args.id },
+        include: { piantina: { select: { cantiereId: true } } },
+      });
+      if (!punto) return null;
+      if (!ctx.user) {
+        if (!ctx.shareCantiereId || ctx.shareCantiereId !== punto.piantina.cantiereId) {
+          throw new (require("graphql").GraphQLError)("Risorsa non disponibile", {
+            extensions: { code: ctx.shareCantiereId ? "FORBIDDEN" : "UNAUTHENTICATED" },
+          });
+        }
+      }
+      return punto;
     },
   },
 

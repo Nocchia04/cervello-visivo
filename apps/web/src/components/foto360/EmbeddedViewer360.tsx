@@ -6,6 +6,7 @@ import { MapPin, Check, X, ChevronLeft, ChevronRight, Clock, Trash2, Pencil } fr
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { safeDate } from "@/lib/dateUtils";
 import { linkify } from "@/lib/linkify";
+import { useIsReadOnly } from "@/lib/readOnly";
 import { GET_ANNOTAZIONI, ME } from "@/graphql/queries";
 import { CREA_ANNOTAZIONE, ELIMINA_ANNOTAZIONE, AGGIORNA_ANNOTAZIONE } from "@/graphql/mutations";
 import { NUOVA_ANNOTAZIONE } from "@/graphql/subscriptions";
@@ -85,8 +86,9 @@ export default function EmbeddedViewer360({
   const currentFotoId = currentFoto?.id;
 
   // ── GraphQL ──────────────────────────────────────────────────────────────
-  const { data: meData } = useQuery(ME);
-  const isAdmin = meData?.me?.role === "ADMIN";
+  const isReadOnly = useIsReadOnly();
+  const { data: meData } = useQuery(ME, { skip: isReadOnly });
+  const isAdmin = !isReadOnly && meData?.me?.role === "ADMIN";
 
   const { data: annotData } = useQuery(GET_ANNOTAZIONI, {
     variables: { foto360Id: currentFotoId },
@@ -160,11 +162,16 @@ export default function EmbeddedViewer360({
 
   // Sync external addingNote control
   useEffect(() => {
+    if (isReadOnly) {
+      if (addingNote) setAddingNote(false);
+      if (pendingNote) setPendingNote(null);
+      return;
+    }
     if (addingNoteExternal !== undefined && addingNoteExternal !== addingNote) {
       setAddingNote(addingNoteExternal);
       if (!addingNoteExternal) { setPendingNote(null); setNoteText(""); }
     }
-  }, [addingNoteExternal]);
+  }, [addingNoteExternal, isReadOnly]);
 
   // Report annotation count to parent
   useEffect(() => {
