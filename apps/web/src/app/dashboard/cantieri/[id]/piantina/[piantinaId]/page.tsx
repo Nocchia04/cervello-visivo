@@ -13,7 +13,7 @@ import {
   Unlock,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import PiantinaFullScreenModal from "@/components/piantina/PiantinaFullScreenModal";
+import PiantinaSidebarWidget from "@/components/piantina/PiantinaSidebarWidget";
 import DateDropdown from "@/components/piantina/DateDropdown";
 import { GET_PIANTINA } from "@/graphql/queries";
 import { UPLOAD_FOTO360, ELIMINA_FOTO360 } from "@/graphql/mutations";
@@ -580,7 +580,7 @@ export default function PiantinaPage() {
             Nessuna foto 360 disponibile
           </p>
           <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
-            Seleziona un punto dalla mappa nel sidebar o carica una nuova foto
+            Seleziona un punto dalla mappa o carica una nuova foto
           </p>
         </div>
       )}
@@ -599,30 +599,6 @@ export default function PiantinaPage() {
           alignItems: "flex-start",
         }}
       >
-        {/* Open piantina full-screen */}
-        <button
-          onClick={() => updateParams({ map: "1" })}
-          title="Apri piantina"
-          style={{
-            background: "rgba(0,0,0,0.6)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 999,
-            padding: "8px 16px",
-            fontSize: 13,
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            cursor: "pointer",
-            backdropFilter: "blur(8px)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <Maximize2 className="w-4 h-4" />
-          Mappa
-        </button>
-
         {/* Note button */}
         {hasCurrentFoto && !isCompareSplit && (
           <button
@@ -730,9 +706,9 @@ export default function PiantinaPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          Piantina full-screen modal (shared via URL ?map=1)
+          Piantina dockable widget — fixed, ridimensionabile, sopra "Esci"
           ═══════════════════════════════════════════════════════════════════ */}
-      <PiantinaFullScreenModal piantinaId={piantinaId} />
+      <PiantinaSidebarWidget cantiereId={params.id as string} piantinaId={piantinaId} />
     </div>
   );
 }
