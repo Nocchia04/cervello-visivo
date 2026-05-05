@@ -6,6 +6,7 @@ import { GET_ANNOTAZIONI } from "@/graphql/queries";
 import { NUOVA_ANNOTAZIONE } from "@/graphql/subscriptions";
 import AnnotazioneForm from "./AnnotazioneForm";
 import { safeDate } from "@/lib/dateUtils";
+import { linkify } from "@/lib/linkify";
 
 interface Annotazione {
   id: string;
@@ -98,7 +99,7 @@ export default function AnnotazionePanel({ foto360Id }: AnnotazionePanelProps) {
                   })}
                 </span>
               </div>
-              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>{annotazione.testo}</p>
+              <p className="text-sm mt-1 whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>{linkify(annotazione.testo)}</p>
             </div>
           ))
         )}

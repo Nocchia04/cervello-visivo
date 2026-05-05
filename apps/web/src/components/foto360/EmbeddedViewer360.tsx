@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { MapPin, Check, X, ChevronLeft, ChevronRight, Clock, Trash2, Pencil } from "lucide-react";
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { safeDate } from "@/lib/dateUtils";
+import { linkify } from "@/lib/linkify";
 import { GET_ANNOTAZIONI, ME } from "@/graphql/queries";
 import { CREA_ANNOTAZIONE, ELIMINA_ANNOTAZIONE, AGGIORNA_ANNOTAZIONE } from "@/graphql/mutations";
 import { NUOVA_ANNOTAZIONE } from "@/graphql/subscriptions";
@@ -534,7 +535,7 @@ export default function EmbeddedViewer360({
                         </button>
                       </div>
                     </div>
-                    <div style={{ lineHeight: 1.4, marginBottom: 5 }}>{annot.testo}</div>
+                    <div style={{ lineHeight: 1.4, marginBottom: 5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(annot.testo)}</div>
                     <div style={{ fontSize: 10, color: "#aaa" }}>
                       {safeDate(annot.createdAt).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </div>

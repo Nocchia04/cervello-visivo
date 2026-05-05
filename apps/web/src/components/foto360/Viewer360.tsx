@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { X, ChevronLeft, ChevronRight, MapPin, Check, Pencil, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { safeDate } from "@/lib/dateUtils";
+import { linkify } from "@/lib/linkify";
 import { GET_ANNOTAZIONI, ME } from "@/graphql/queries";
 import { CREA_ANNOTAZIONE, ELIMINA_ANNOTAZIONE, AGGIORNA_ANNOTAZIONE } from "@/graphql/mutations";
 import { NUOVA_ANNOTAZIONE } from "@/graphql/subscriptions";
@@ -530,7 +531,7 @@ export default function Viewer360({
                         <button onClick={(e) => { e.stopPropagation(); setExpandedId(null); }} style={{ background: "none", border: "none", cursor: "pointer", padding: "0 0 0 4px", fontSize: 16, lineHeight: 1, color: "#999" }}>×</button>
                       </div>
                     </div>
-                    <div style={{ lineHeight: 1.45, marginBottom: 6, whiteSpace: "pre-wrap" }}>{annot.testo}</div>
+                    <div style={{ lineHeight: 1.45, marginBottom: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(annot.testo)}</div>
                     <div style={{ fontSize: 10, color: "#aaa" }}>
                       {safeDate(annot.createdAt).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </div>
