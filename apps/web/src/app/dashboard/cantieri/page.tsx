@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, Camera, MapPin, Plus, Archive, RotateCcw } from "lucide-react";
+import { Building2, Camera, MapPin, Plus, Archive, RotateCcw, Search, X } from "lucide-react";
 import { safeDate } from "@/lib/dateUtils";
 import { GET_CANTIERI } from "@/graphql/queries";
 import { ARCHIVIA_CANTIERE, RIATTIVA_CANTIERE } from "@/graphql/mutations";
@@ -26,6 +26,7 @@ interface Cantiere {
 
 export default function CantieriPage() {
   const [mostraArchiviati, setMostraArchiviati] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
 
   const { data, loading, refetch } = useQuery(GET_CANTIERI, {
@@ -36,32 +37,112 @@ export default function CantieriPage() {
   const [riattiva] = useMutation(RIATTIVA_CANTIERE, { onCompleted: () => refetch() });
 
   const allCantieri: Cantiere[] = data?.cantieri ?? [];
-  const cantieri = mostraArchiviati
-    ? allCantieri
-    : allCantieri.filter((c) => c.stato === "ATTIVO");
+
+  // Filtro: prima per stato, poi per query di ricerca (nome OR indirizzo).
+  // Match case-insensitive. La query viene trimmata per ignorare spazi accidentali.
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const cantieri = allCantieri
+    .filter((c) => mostraArchiviati || c.stato === "ATTIVO")
+    .filter((c) => {
+      if (!trimmedQuery) return true;
+      return (
+        c.nome.toLowerCase().includes(trimmedQuery) ||
+        c.indirizzo.toLowerCase().includes(trimmedQuery)
+      );
+    });
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
+        <div className="flex-shrink-0">
           <h1 className="text-2xl font-bold">Cantieri</h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
             {allCantieri.filter((c) => c.stato === "ATTIVO").length} attivi · {allCantieri.filter((c) => c.stato === "ARCHIVIATO").length} archiviati
           </p>
         </div>
-        <label
-          className="flex items-center gap-2 text-sm cursor-pointer"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <input
-            type="checkbox"
-            checked={mostraArchiviati}
-            onChange={(e) => setMostraArchiviati(e.target.checked)}
-            className="rounded"
-            style={{ accentColor: "var(--accent)" }}
-          />
-          Mostra archiviati
-        </label>
+
+        <div className="flex items-center gap-3 sm:gap-4 flex-1 sm:flex-initial sm:justify-end">
+          {/* Search bar */}
+          <div
+            className="relative flex-1 sm:flex-initial"
+            style={{ maxWidth: 360 }}
+          >
+            <Search
+              className="w-4 h-4 absolute pointer-events-none"
+              style={{
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--text-muted)",
+              }}
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cerca cantiere…"
+              aria-label="Cerca cantiere per nome o indirizzo"
+              className="w-full text-sm transition-colors"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "8px 36px 8px 36px",
+                color: "var(--text)",
+                outline: "none",
+              }}
+              onFocus={(e) => {
+                (e.currentTarget as HTMLInputElement).style.borderColor =
+                  "var(--accent)";
+                (e.currentTarget as HTMLInputElement).style.boxShadow =
+                  "0 0 0 3px rgba(17,24,39,0.08)";
+              }}
+              onBlur={(e) => {
+                (e.currentTarget as HTMLInputElement).style.borderColor =
+                  "var(--border)";
+                (e.currentTarget as HTMLInputElement).style.boxShadow = "none";
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                aria-label="Cancella ricerca"
+                className="absolute flex items-center justify-center"
+                style={{
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 22,
+                  height: 22,
+                  borderRadius: 999,
+                  background: "var(--surface-hover)",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                }}
+                title="Cancella ricerca"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Mostra archiviati */}
+          <label
+            className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap flex-shrink-0"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <input
+              type="checkbox"
+              checked={mostraArchiviati}
+              onChange={(e) => setMostraArchiviati(e.target.checked)}
+              className="rounded"
+              style={{ accentColor: "var(--accent)" }}
+            />
+            <span className="hidden sm:inline">Mostra archiviati</span>
+            <span className="sm:hidden">Archiviati</span>
+          </label>
+        </div>
       </div>
 
       {loading ? (
@@ -72,17 +153,31 @@ export default function CantieriPage() {
           />
         </div>
       ) : cantieri.length === 0 ? (
-        <div className="card flex flex-col items-center justify-center py-20 text-center">
-          <Building2 className="w-16 h-16 mb-4 opacity-20" />
-          <p className="font-medium text-lg">Nessun cantiere</p>
-          <p className="text-sm mt-1 mb-6" style={{ color: "var(--text-muted)" }}>
-            Inizia creando il tuo primo cantiere
-          </p>
-          <Link href="/dashboard/cantieri/nuovo" className="btn-primary">
-            <Plus className="w-4 h-4" />
-            Crea cantiere
-          </Link>
-        </div>
+        trimmedQuery ? (
+          <div className="card flex flex-col items-center justify-center py-16 text-center">
+            <Search className="w-12 h-12 mb-3 opacity-20" />
+            <p className="font-medium text-lg">Nessun risultato</p>
+            <p className="text-sm mt-1 mb-5" style={{ color: "var(--text-muted)" }}>
+              Nessun cantiere corrisponde a “{searchQuery}”
+            </p>
+            <button onClick={() => setSearchQuery("")} className="btn-secondary">
+              <X className="w-4 h-4" />
+              Cancella ricerca
+            </button>
+          </div>
+        ) : (
+          <div className="card flex flex-col items-center justify-center py-20 text-center">
+            <Building2 className="w-16 h-16 mb-4 opacity-20" />
+            <p className="font-medium text-lg">Nessun cantiere</p>
+            <p className="text-sm mt-1 mb-6" style={{ color: "var(--text-muted)" }}>
+              Inizia creando il tuo primo cantiere
+            </p>
+            <Link href="/dashboard/cantieri/nuovo" className="btn-primary">
+              <Plus className="w-4 h-4" />
+              Crea cantiere
+            </Link>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {cantieri.map((cantiere) => (
