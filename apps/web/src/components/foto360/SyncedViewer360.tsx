@@ -140,11 +140,19 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
 
     // Drag base — captures lon/lat at mousedown/touchstart so drag is absolute
     const dragBaseRef = useRef({ lon: 0, lat: 0 });
+    // Distingue drag con tasto sinistro (sincronizzato col partner) da drag
+    // con tasto destro (solo questo viewer — il partner rimane fermo per la
+    // durata del drag, come una sorta di "lock temporaneo"). Utile in compare
+    // mode per allineare manualmente una vista senza muovere l'altra.
+    const isRightDragRef = useRef(false);
 
     // Mouse drag — absolute from mousedown position (avoids drift)
     const onMouseDown = (e: React.MouseEvent) => {
       if (lockedRef.current) return;
+      // 0 = sinistro, 2 = destro. Ignora middle/altri bottoni.
+      if (e.button !== 0 && e.button !== 2) return;
       isDraggingRef.current = true;
+      isRightDragRef.current = e.button === 2;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
       dragBaseRef.current = { lon: lonRef.current, lat: latRef.current };
     };
@@ -155,11 +163,21 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
       const dy = e.clientY - lastMouseRef.current.y;
       lonRef.current = dragBaseRef.current.lon + dx * 0.3;
       latRef.current = Math.max(-85, Math.min(85, dragBaseRef.current.lat + dy * 0.3));
-      onRotateRef.current?.(lonRef.current, latRef.current);
+      // Tasto sinistro → propaga al partner (sync). Tasto destro → solo questo.
+      if (!isRightDragRef.current) {
+        onRotateRef.current?.(lonRef.current, latRef.current);
+      }
     };
 
     const onMouseUp = () => {
       isDraggingRef.current = false;
+      isRightDragRef.current = false;
+    };
+
+    // Previeni il menu contestuale del browser sul tasto destro, altrimenti
+    // appare durante il drag e interrompe l'interazione.
+    const onContextMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
     };
 
     // Touch drag — registered natively with { passive: false } so preventDefault works
@@ -199,6 +217,7 @@ const SyncedViewer360 = forwardRef<SyncedViewer360Handle, SyncedViewer360Props>(
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseUp}
+          onContextMenu={onContextMenu}
           onTouchStart={onTouchStart}
           onTouchEnd={onMouseUp}
         />
