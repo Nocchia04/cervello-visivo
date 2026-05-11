@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import com.facebook.react.bridge.*
@@ -193,44 +194,90 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
             ?: return promise.reject("NOT_CONNECTED", "Non connesso al WiFi della camera")
 
         Thread {
+            val startTime = System.currentTimeMillis()
+            // WiFi Lock high-performance: impedisce al chip WiFi del telefono
+            // di entrare in power-save mode durante il download (può tagliare
+            // la banda effettiva del 50-80% su alcuni device). Rilasciato in
+            // finally così che torni in stato normale dopo il transfer.
+            val wifiManager = reactContext.applicationContext
+                .getSystemService(android.content.Context.WIFI_SERVICE) as? WifiManager
+            val wifiLock = wifiManager?.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "ThetaDownloadLock"
+            )?.apply {
+                setReferenceCounted(false)
+                try { acquire() } catch (_: Exception) {}
+            }
+
             try {
                 val file = File(destPath)
                 file.parentFile?.mkdirs()
 
-                // Step 1: HEAD per scoprire dimensione e supporto Range
+                // Step 1: HEAD per scoprire dimensione. NON ci affidiamo più
+                // ad `Accept-Ranges` per decidere se parallelizzare: la SC2
+                // (e altre camere) supportano Range nei GET anche senza
+                // dichiararlo nell'header HEAD. Tentiamo SEMPRE parallel se
+                // contentLength è noto e abbastanza grande.
                 var headConn: HttpURLConnection? = null
                 var contentLength: Long = -1
-                var acceptsRanges = false
+                var acceptsRangesAdvertised = false
+                val headStart = System.currentTimeMillis()
                 try {
                     headConn = network.openConnection(URL(url)) as HttpURLConnection
                     headConn.requestMethod = "HEAD"
-                    headConn.connectTimeout = 10_000
-                    headConn.readTimeout = 15_000
+                    headConn.connectTimeout = 5_000
+                    headConn.readTimeout = 5_000
                     headConn.instanceFollowRedirects = false
                     headConn.setRequestProperty("Connection", "keep-alive")
                     if (headConn.responseCode == 200) {
                         contentLength = headConn.contentLengthLong
-                        acceptsRanges = headConn.getHeaderField("Accept-Ranges")
+                        acceptsRangesAdvertised = headConn.getHeaderField("Accept-Ranges")
                             ?.equals("bytes", ignoreCase = true) == true
                     }
-                } catch (_: Exception) {
-                    // Fallback a sequenziale se HEAD fallisce
+                } catch (e: Exception) {
+                    android.util.Log.w("ThetaWifi", "HEAD fallito: ${e.message}")
                 } finally {
                     headConn?.disconnect()
                 }
+                val headElapsed = System.currentTimeMillis() - headStart
+                android.util.Log.d(
+                    "ThetaWifi",
+                    "HEAD done in ${headElapsed}ms — size=$contentLength, advertised Accept-Ranges=$acceptsRangesAdvertised"
+                )
 
-                // Step 2: se Range supportato e file abbastanza grande, scarica
-                // in parallelo. 8 chunk + buffer 512KB satura la banda 2.4GHz
-                // della SC2 (~3-5 MB/s effettivi) meglio dei 4 chunk precedenti.
                 val CHUNK_COUNT = 8
-                val MIN_CHUNK_SIZE = 256 * 1024L  // 256KB min/chunk → file >= 2MB usa parallel
-                if (acceptsRanges && contentLength > MIN_CHUNK_SIZE * CHUNK_COUNT) {
-                    downloadChunked(network, url, file, contentLength, CHUNK_COUNT, promise)
+                val MIN_CHUNK_SIZE = 256 * 1024L  // ≥ 2 MB attiva parallel
+                val downloadStart = System.currentTimeMillis()
+
+                if (contentLength > MIN_CHUNK_SIZE * CHUNK_COUNT) {
+                    android.util.Log.d(
+                        "ThetaWifi",
+                        "Tentativo parallel: $CHUNK_COUNT chunks su file ${contentLength / 1024} KB"
+                    )
+                    val ok = downloadChunkedOrFail(network, url, file, contentLength, CHUNK_COUNT)
+                    if (!ok) {
+                        android.util.Log.w("ThetaWifi", "Parallel fallito — fallback sequential")
+                        downloadSequential(network, url, file, promise)
+                    } else {
+                        val elapsed = System.currentTimeMillis() - downloadStart
+                        val kbs = if (elapsed > 0) (contentLength * 1000 / elapsed / 1024) else 0
+                        android.util.Log.d(
+                            "ThetaWifi",
+                            "Parallel download OK: ${elapsed}ms, ${kbs} KB/s, total ${System.currentTimeMillis() - startTime}ms"
+                        )
+                        promise.resolve(file.absolutePath)
+                    }
                 } else {
+                    android.util.Log.d(
+                        "ThetaWifi",
+                        "File piccolo o size sconosciuto ($contentLength) — sequential"
+                    )
                     downloadSequential(network, url, file, promise)
                 }
             } catch (e: Exception) {
                 promise.reject("DOWNLOAD_FAILED", e.message ?: "Download fallito")
+            } finally {
+                try { wifiLock?.release() } catch (_: Exception) {}
             }
         }.start()
     }
@@ -243,9 +290,10 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
         promise: Promise
     ) {
         var conn: HttpURLConnection? = null
+        val start = System.currentTimeMillis()
         try {
             conn = network.openConnection(URL(url)) as HttpURLConnection
-            conn.connectTimeout = 30_000
+            conn.connectTimeout = 15_000
             conn.readTimeout = 120_000
             conn.instanceFollowRedirects = false
             conn.setRequestProperty("Connection", "keep-alive")
@@ -258,13 +306,19 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
             }
 
             // Buffer 1 MB per il sequenziale (file piccoli o Range non supportato).
-            // Riduce le syscall di read/write su LAN locale ad alta banda.
             val bufferSize = 1024 * 1024
             BufferedInputStream(conn.inputStream, bufferSize).use { input ->
                 BufferedOutputStream(FileOutputStream(file), bufferSize).use { output ->
                     input.copyTo(output, bufferSize)
                 }
             }
+            val elapsed = System.currentTimeMillis() - start
+            val sizeBytes = file.length()
+            val kbs = if (elapsed > 0) (sizeBytes * 1000 / elapsed / 1024) else 0
+            android.util.Log.d(
+                "ThetaWifi",
+                "Sequential download OK: ${elapsed}ms, ${sizeBytes / 1024} KB, ${kbs} KB/s"
+            )
             promise.resolve(file.absolutePath)
         } catch (e: Exception) {
             promise.reject("DOWNLOAD_FAILED", e.message ?: "Download fallito")
@@ -273,21 +327,31 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Download parallelo con HTTP Range: divide in `chunkCount` pezzi scaricati in parallelo */
-    private fun downloadChunked(
+    /**
+     * Download parallelo con HTTP Range. Ritorna `true` se completato con
+     * successo, `false` se ha fallito (e il chiamante può fare fallback a
+     * sequential). Non chiama il promise — la gestione è del caller.
+     *
+     * Guard chunk-by-chunk: se UN chunk torna 200 invece di 206, vuol dire
+     * che il server (es. SC2 con firmware esotico) ha IGNORATO l'header
+     * `Range` e sta servendo il file intero. In quel caso aborto immediato
+     * (per non ricevere N copie dello stesso file in N thread).
+     */
+    private fun downloadChunkedOrFail(
         network: Network,
         url: String,
         file: File,
         totalSize: Long,
-        chunkCount: Int,
-        promise: Promise
-    ) {
+        chunkCount: Int
+    ): Boolean {
         try {
-            // Pre-alloca il file a dimensione totale
+            // Pre-alloca il file a dimensione totale (zero-fill via setLength).
+            // Evita realloc durante le write paralleli da seek diversi.
             RandomAccessFile(file, "rw").use { raf -> raf.setLength(totalSize) }
 
             val chunkSize = totalSize / chunkCount
             val errors = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val rangeIgnoredByServer = java.util.concurrent.atomic.AtomicBoolean(false)
             val latch = java.util.concurrent.CountDownLatch(chunkCount)
 
             for (i in 0 until chunkCount) {
@@ -297,10 +361,14 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
                 Thread {
                     var conn: HttpURLConnection? = null
                     try {
+                        // Se un altro chunk ha già rilevato che il server
+                        // ignora Range, abortisco anche questo (no spreco).
+                        if (rangeIgnoredByServer.get()) return@Thread
+
                         conn = network.openConnection(URL(url)) as HttpURLConnection
                         conn.requestMethod = "GET"
-                        conn.connectTimeout = 30_000
-                        conn.readTimeout = 120_000
+                        conn.connectTimeout = 15_000
+                        conn.readTimeout = 60_000
                         conn.instanceFollowRedirects = false
                         conn.setRequestProperty("Connection", "keep-alive")
                         conn.setRequestProperty("Accept-Encoding", "identity")
@@ -308,14 +376,25 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
                         conn.connect()
 
                         val code = conn.responseCode
-                        if (code != 206 && code != 200) {
-                            errors.add("Chunk $i HTTP $code")
-                            return@Thread
+                        when {
+                            code == 206 -> {
+                                // Range supportato. Continua il download del chunk.
+                            }
+                            code == 200 -> {
+                                // Server ignora Range → ha mandato il file intero.
+                                // Aborto: non possiamo parallelizzare.
+                                rangeIgnoredByServer.set(true)
+                                errors.add("Chunk $i: Range ignorato (HTTP 200)")
+                                return@Thread
+                            }
+                            else -> {
+                                errors.add("Chunk $i HTTP $code")
+                                return@Thread
+                            }
                         }
 
-                        // Buffer 512 KB per chunk (8 chunk = ~4 MB di buffer
-                        // totale, accettabile su Android moderno) — riduce
-                        // overhead syscall sul read del socket.
+                        // Buffer 512 KB per chunk (8 chunk = ~4 MB totali,
+                        // accettabile su Android moderno) — riduce syscall.
                         val bufferSize = 512 * 1024
                         RandomAccessFile(file, "rw").use { raf ->
                             raf.seek(start)
@@ -336,22 +415,21 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
                 }.start()
             }
 
-            // Attendi tutti i thread (max 3 minuti total)
+            // Attendi tutti i thread (max 3 min totali per file molto grandi)
             if (!latch.await(180, java.util.concurrent.TimeUnit.SECONDS)) {
-                promise.reject("DOWNLOAD_TIMEOUT", "Timeout download parallelo")
-                return
+                android.util.Log.w("ThetaWifi", "downloadChunked: timeout latch")
+                return false
             }
 
             if (errors.isNotEmpty()) {
-                // Qualcosa è andato storto — fallback sequenziale
-                downloadSequential(network, url, file, promise)
-                return
+                android.util.Log.w("ThetaWifi", "downloadChunked errors: $errors")
+                return false
             }
 
-            promise.resolve(file.absolutePath)
+            return true
         } catch (e: Exception) {
-            // Se il parallel fallisce per qualsiasi ragione, fallback sequenziale
-            downloadSequential(network, url, file, promise)
+            android.util.Log.w("ThetaWifi", "downloadChunked exception: ${e.message}")
+            return false
         }
     }
 
