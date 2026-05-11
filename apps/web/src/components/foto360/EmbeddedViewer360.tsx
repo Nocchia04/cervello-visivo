@@ -249,10 +249,16 @@ export default function EmbeddedViewer360({
     materialRef.current = material;
     scene.add(new THREE.Mesh(geometry, material));
 
-    // Niente loadTexture qui: lo fa il useEffect dedicato che dipende da
-    // currentFoto?.url e copre anche il primo render (undefined → url).
-    // Rimuovere il loadTexture(foto[0].url) evita closure stale su `foto`
-    // catturato al mount.
+    // Carica subito la texture della foto corrente al primo mount.
+    // Il useEffect dedicato a [currentFoto?.url] gestisce i cambi successivi
+    // ma NON il bootstrap: al primo render React esegue prima il suo body
+    // (programmando l'effect) e POI questo init Three.js. Quando l'effect
+    // dedicato fa la sua prima esecuzione, `materialRef.current` è ancora null
+    // (init non ancora avvenuto) → loadTexture esce silente. Risultato: sfera
+    // bianca finché currentFoto?.url non cambia di nuovo.
+    // Quindi qui carichiamo esplicitamente la foto corrente catturata in
+    // closure (è il bootstrap, una volta sola — non c'è stale concern).
+    if (currentFoto?.url) loadTexture(currentFoto.url);
 
     const animate = () => {
       rafRef.current = requestAnimationFrame(animate);
