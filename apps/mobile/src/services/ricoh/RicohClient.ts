@@ -153,6 +153,39 @@ class RicohClient {
   }
 
   /**
+   * Scarica solo la thumbnail della foto (~100-300 KB invece di 5-15 MB).
+   * RICOH THETA espone `<fileUrl>?type=thumb` come variante a bassa risoluzione,
+   * documentato in theta-client/transferred/listFilesCommand.kt (THUMBNAIL_QUERY).
+   *
+   * Use case: mostrare immediatamente all'utente l'anteprima di conferma post-scatto
+   * mentre il download del file originale prosegue in background.
+   */
+  async downloadThumbnail(fileUrl: string): Promise<string> {
+    const thumbUrl = `${fileUrl}?type=thumb`;
+    const fileName = `thumb_${fileUrl.split("/").pop() || `theta_${Date.now()}.jpg`}`;
+    const dirUri = `${FileSystem.documentDirectory}photos/thumbs/`;
+    const localUri = `${dirUri}${fileName}`;
+
+    const dirInfo = await FileSystem.getInfoAsync(dirUri);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
+    }
+
+    const isAndroid10 = Platform.OS === "android" && (Platform.Version as number) >= 29;
+    if (isAndroid10) {
+      const nativePath = localUri.replace(/^file:\/\//, "");
+      await downloadFileViaCameraNetwork(thumbUrl, nativePath);
+      return localUri;
+    }
+
+    const downloadResult = await FileSystem.downloadAsync(thumbUrl, localUri);
+    if (downloadResult.status !== 200) {
+      throw new Error(`Download thumbnail fallito: ${downloadResult.status}`);
+    }
+    return downloadResult.uri;
+  }
+
+  /**
    * Imposta opzioni sulla camera. Es:
    *   setOptions({ previewFormat: { width: 1024, height: 512, framerate: 30 } })
    *   setOptions({ _wlanFrequency: 5.0 })
