@@ -219,9 +219,11 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
                     headConn?.disconnect()
                 }
 
-                // Step 2: se Range supportato e file > 1MB, scarica in parallelo
-                val CHUNK_COUNT = 4
-                val MIN_CHUNK_SIZE = 512 * 1024L  // 512KB minimo per chunk
+                // Step 2: se Range supportato e file abbastanza grande, scarica
+                // in parallelo. 8 chunk + buffer 512KB satura la banda 2.4GHz
+                // della SC2 (~3-5 MB/s effettivi) meglio dei 4 chunk precedenti.
+                val CHUNK_COUNT = 8
+                val MIN_CHUNK_SIZE = 256 * 1024L  // 256KB min/chunk → file >= 2MB usa parallel
                 if (acceptsRanges && contentLength > MIN_CHUNK_SIZE * CHUNK_COUNT) {
                     downloadChunked(network, url, file, contentLength, CHUNK_COUNT, promise)
                 } else {
@@ -255,7 +257,9 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
                 return
             }
 
-            val bufferSize = 256 * 1024
+            // Buffer 1 MB per il sequenziale (file piccoli o Range non supportato).
+            // Riduce le syscall di read/write su LAN locale ad alta banda.
+            val bufferSize = 1024 * 1024
             BufferedInputStream(conn.inputStream, bufferSize).use { input ->
                 BufferedOutputStream(FileOutputStream(file), bufferSize).use { output ->
                     input.copyTo(output, bufferSize)
@@ -309,7 +313,10 @@ class ThetaWifiModule(private val reactContext: ReactApplicationContext) :
                             return@Thread
                         }
 
-                        val bufferSize = 128 * 1024
+                        // Buffer 512 KB per chunk (8 chunk = ~4 MB di buffer
+                        // totale, accettabile su Android moderno) — riduce
+                        // overhead syscall sul read del socket.
+                        val bufferSize = 512 * 1024
                         RandomAccessFile(file, "rw").use { raf ->
                             raf.seek(start)
                             BufferedInputStream(conn.inputStream, bufferSize).use { input ->

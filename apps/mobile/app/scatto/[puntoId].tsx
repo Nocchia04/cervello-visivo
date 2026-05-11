@@ -61,18 +61,17 @@ export default function ScattoScreen() {
   const [pendingCount, setPendingCount] = useState(0);
 
   // Pending photo waiting for user confirmation before upload.
-  // Strategia thumbnail-first: subito dopo lo scatto scarichiamo solo la thumb
-  // (~200KB, ~1s) per mostrare l'anteprima all'utente. Nel frattempo il file
-  // pieno (5-15MB) si scarica in background. Se l'utente conferma, attendiamo
-  // il completamento del download pieno e lo passiamo alla UploadQueue.
-  // Se scarta, cancelliamo entrambi.
+  // Scarichiamo il file pieno dalla camera prima di mostrare l'anteprima
+  // (qualità nativa nel viewer 360°). La banda WiFi 2.4 GHz della SC2 limita
+  // il transfer fisico a ~3-5 MB/s: il modulo nativo Android usa chunks
+  // paralleli HTTP Range con buffer ampi per saturare il canale. Dopo la
+  // conferma la UploadQueue ridimensiona la foto a max 3072px prima di
+  // uploadare al backend (~70% in meno di banda mobile).
   const [pendingPhoto, setPendingPhoto] = useState<{
-    thumbUri: string;
-    fullDownloadPromise: Promise<string | null>;
+    localUri: string;
     queueId: string;
     timestamp: string;
   } | null>(null);
-  const [isFinalizing, setIsFinalizing] = useState(false);
 
   // Refresh pending count periodically
   useEffect(() => {
@@ -284,31 +283,16 @@ export default function ScattoScreen() {
         }
       }
 
-      // ── 4. Thumbnail-first: scarica subito la versione piccola (~200KB,
-      // ~1s) per mostrare l'anteprima all'utente. In parallelo avvia il
-      // download del file pieno (5-15MB) in background — quando l'utente
-      // conferma, è già a buon punto o completato. UX percepita da
-      // ~8s → ~1s. WiFi rimane connesso per entrambi i download.
-      setTakingStep("Anteprima...");
-      const thumbUri = await ricohClient.downloadThumbnail(fileUrl);
-
-      // Avvia subito il download del file pieno in background. Catch interno
-      // per evitare unhandled rejection — l'errore verrà gestito a conferma.
-      const fullDownloadPromise: Promise<string | null> = ricohClient
-        .downloadFile(fileUrl)
-        .catch((err) => {
-          dlog("CAM", `Background full download fallito: ${err instanceof Error ? err.message : err}`);
-          return null;
-        });
+      // ── 4. Scarica il file pieno dalla camera (full quality nel viewer 360).
+      // Il modulo nativo Android (downloadFileViaCameraNetwork) parallelizza
+      // 8 chunk HTTP Range con buffer 512KB per saturare la banda WiFi 2.4 GHz
+      // della SC2 (~3-5 MB/s effettivi). File 5-15 MB → ~2-5s tipici.
+      setTakingStep("Download foto...");
+      const localUri = await ricohClient.downloadFile(fileUrl);
 
       setTakingStep("");
       const queueItemId = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      setPendingPhoto({
-        thumbUri,
-        fullDownloadPromise,
-        queueId: queueItemId,
-        timestamp: new Date().toISOString(),
-      });
+      setPendingPhoto({ localUri, queueId: queueItemId, timestamp: new Date().toISOString() });
     } catch (err) {
       setTakingStep("");
       Alert.alert("Errore scatto", err instanceof Error ? err.message : "Errore durante lo scatto");
@@ -320,47 +304,24 @@ export default function ScattoScreen() {
 
   const handleConfermaPhoto = useCallback(async () => {
     if (!pendingPhoto) return;
-    setIsFinalizing(true);
-    try {
-      // Attende il completamento del download del file pieno (di solito già
-      // finito o quasi quando l'utente preme conferma — il download è partito
-      // in parallelo allo scatto della thumb).
-      const fullLocalUri = await pendingPhoto.fullDownloadPromise;
-      if (!fullLocalUri) {
-        Alert.alert(
-          "Errore",
-          "Download foto non completato. La camera potrebbe essere irraggiungibile — riprova lo scatto."
-        );
-        return;
-      }
-
-      // Pulisci la thumb (non serve più, abbiamo il file pieno)
-      FileSystem.deleteAsync(pendingPhoto.thumbUri, { idempotent: true }).catch(() => {});
-
-      await uploadQueue.addToQueue({
-        id: pendingPhoto.queueId,
-        localUri: fullLocalUri,
-        puntoDiScattoId: puntoId as string,
-        timestamp: pendingPhoto.timestamp,
-      });
-      setLastPhotoUri(fullLocalUri);
-      uploadQueue.getPendingCount().then(setPendingCount);
-      setPendingPhoto(null);
-      router.back();
-    } finally {
-      setIsFinalizing(false);
-    }
+    await uploadQueue.addToQueue({
+      id: pendingPhoto.queueId,
+      localUri: pendingPhoto.localUri,
+      puntoDiScattoId: puntoId as string,
+      timestamp: pendingPhoto.timestamp,
+    });
+    setLastPhotoUri(pendingPhoto.localUri);
+    uploadQueue.getPendingCount().then(setPendingCount);
+    setPendingPhoto(null);
+    // Torna alla piantina — lì riparte la riconnessione BLE per lo scatto successivo
+    router.back();
   }, [pendingPhoto, puntoId]);
 
   const handleScartaPhoto = useCallback(async () => {
     if (!pendingPhoto) return;
-    // Cancella subito la thumb
-    FileSystem.deleteAsync(pendingPhoto.thumbUri, { idempotent: true }).catch(() => {});
-    // Quando il download in background completa (se non è già finito),
-    // cancella anche il file pieno per non sprecare disco.
-    pendingPhoto.fullDownloadPromise.then((uri) => {
-      if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
-    });
+    try {
+      await FileSystem.deleteAsync(pendingPhoto.localUri, { idempotent: true });
+    } catch {}
     setPendingPhoto(null);
     previewRef.current?.startStream();
   }, [pendingPhoto]);
@@ -629,7 +590,7 @@ export default function ScattoScreen() {
         <View style={styles.previewModal}>
           {pendingPhoto && (
             <Viewer360Native
-              foto={[{ id: "preview", url: pendingPhoto.thumbUri, timestamp: pendingPhoto.timestamp }]}
+              foto={[{ id: "preview", url: pendingPhoto.localUri, timestamp: pendingPhoto.timestamp }]}
               currentIndex={0}
               annotations={[]}
               addingAnnotation={false}
@@ -651,7 +612,6 @@ export default function ScattoScreen() {
               style={styles.discardButton}
               onPress={handleScartaPhoto}
               activeOpacity={0.85}
-              disabled={isFinalizing}
             >
               <Text style={styles.discardButtonText}>Scarta</Text>
             </TouchableOpacity>
@@ -659,16 +619,8 @@ export default function ScattoScreen() {
               style={styles.confirmButton}
               onPress={handleConfermaPhoto}
               activeOpacity={0.85}
-              disabled={isFinalizing}
             >
-              {isFinalizing ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.confirmButtonText}>Finalizzo…</Text>
-                </View>
-              ) : (
-                <Text style={styles.confirmButtonText}>Conferma e carica</Text>
-              )}
+              <Text style={styles.confirmButtonText}>Conferma e carica</Text>
             </TouchableOpacity>
           </View>
         </View>

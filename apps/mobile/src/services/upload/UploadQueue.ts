@@ -1,10 +1,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
+import * as FileSystem from "expo-file-system";
+import * as ImageManipulator from "expo-image-manipulator";
 import { STORAGE_KEYS, getAuthToken } from "../../lib/storage";
 import { apolloClient } from "../../lib/apollo-client";
 import { UPLOAD_FOTO360_MUTATION } from "../../graphql/mutations";
 
 const PROD_SERVER_URL = "https://api.holobuilderino.com";
+
+/**
+ * Target di ridimensionamento per le foto 360° prima dell'upload al backend.
+ * SC2 produce equirettangolari 5376×2688 (~10-15 MB).
+ * 3072×1536 ≈ 1/3 dei pixel, JPEG quality 0.85 → file ~1.5-3 MB.
+ * Qualità ancora ottima per la sfera (decoder GL su mobile usa già downscale).
+ */
+const UPLOAD_MAX_WIDTH = 3072;
+const UPLOAD_JPEG_QUALITY = 0.85;
 
 function getServerBaseUrl(): string {
   if (!__DEV__) return PROD_SERVER_URL;
@@ -90,25 +101,55 @@ class UploadQueueService {
   private async uploadItem(item: QueueItem): Promise<void> {
     const serverBaseUrl = getServerBaseUrl();
 
-    // 1. Upload the local file to server via multipart form
+    // 1. Ridimensiona la foto prima dell'upload — riduce ~70% di banda
+    // mobile e accelera l'upload sul 4G/5G. Il file pieno originale resta
+    // su disco finché non avviene il cleanup (handleConferma elimina
+    // l'originale al ritorno alla piantina).
+    let uploadUri = item.localUri;
+    let resizedCacheUri: string | null = null;
+    try {
+      const resized = await ImageManipulator.manipulateAsync(
+        item.localUri,
+        [{ resize: { width: UPLOAD_MAX_WIDTH } }],
+        {
+          compress: UPLOAD_JPEG_QUALITY,
+          format: ImageManipulator.SaveFormat.JPEG,
+        }
+      );
+      uploadUri = resized.uri;
+      resizedCacheUri = resized.uri;
+    } catch (e) {
+      // Se il resize fallisce (file corrotto, lib non disponibile, ecc.),
+      // fai fallback all'originale: meglio upload più lento che fallimento.
+      console.warn("[UploadQueue] Resize fallito, fallback all'originale:", e);
+    }
+
+    // 2. Upload del file ridimensionato (o originale se resize fallito)
     const formData = new FormData();
     formData.append("foto", {
-      uri: item.localUri,
+      uri: uploadUri,
       type: "image/jpeg",
-      name: item.localUri.split("/").pop() ?? "photo.jpg",
+      name: uploadUri.split("/").pop() ?? "photo.jpg",
     } as any);
 
     const token = await getAuthToken();
-    const uploadRes = await fetch(`${serverBaseUrl}/upload`, {
-      method: "POST",
-      body: formData,
-      headers: {
-        // NON impostare Content-Type manualmente con FormData:
-        // fetch lo setta automaticamente con il boundary corretto.
-        // Impostarlo a mano rimuove il boundary e il server non riesce a parsare il body.
-        Authorization: token ? `Bearer ${token}` : "",
-      },
-    });
+    let uploadRes: Response;
+    try {
+      uploadRes = await fetch(`${serverBaseUrl}/upload`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          // NON impostare Content-Type manualmente con FormData:
+          // fetch lo setta automaticamente con il boundary corretto.
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
+    } finally {
+      // Cleanup del file ridimensionato in cache (sia su successo che fallimento)
+      if (resizedCacheUri) {
+        FileSystem.deleteAsync(resizedCacheUri, { idempotent: true }).catch(() => {});
+      }
+    }
 
     if (!uploadRes.ok) {
       throw new Error(`File upload failed: ${uploadRes.status}`);
@@ -117,7 +158,7 @@ class UploadQueueService {
     const uploadData = await uploadRes.json();
     const publicUrl = `${serverBaseUrl}${uploadData.url}`;
 
-    // 2. Register the photo via GraphQL mutation with the public URL
+    // 3. Registra la foto via GraphQL mutation con la public URL
     await apolloClient.mutate({
       mutation: UPLOAD_FOTO360_MUTATION,
       variables: {
