@@ -182,6 +182,9 @@ export default function EmbeddedViewer360({
     annotationsRef.current = annotations;
   }, [annotations]);
 
+  // Reset popup/annotation state ogni volta che cambia la foto corrente
+  // (anche se l'indice resta lo stesso ma cambia il punto). Dependency su id
+  // (primitiva) per scatti deterministici, indipendenti dalla reference Apollo.
   useEffect(() => {
     setPendingNote(null);
     setNoteText("");
@@ -189,7 +192,7 @@ export default function EmbeddedViewer360({
     setConfirmDeleteId(null);
     setEditingId(null);
     setEditText("");
-  }, [currentIndex]);
+  }, [currentFotoId]);
 
   // ── Load texture ─────────────────────────────────────────────────────────
   const loadTexture = useCallback((url: string) => {
@@ -212,10 +215,15 @@ export default function EmbeddedViewer360({
     );
   }, []);
 
-  // Load texture when currentIndex changes
+  // Carica la texture quando cambia la URL della foto corrente.
+  // Dipendiamo dalla URL (primitiva string) invece che da `currentFoto` (oggetto)
+  // per evitare equality issues con la cache Apollo: se la stessa foto torna con
+  // reference diversa, l'effetto non scatterebbe due volte; se invece due punti
+  // hanno foto con URL diversa, scatta sempre — comportamento deterministico.
+  // Copre anche il primo render perché currentFoto?.url passa da undefined → url.
   useEffect(() => {
-    if (currentFoto) loadTexture(currentFoto.url);
-  }, [currentIndex, currentFoto, loadTexture]);
+    if (currentFoto?.url) loadTexture(currentFoto.url);
+  }, [currentFoto?.url, loadTexture]);
 
   // ── Three.js init ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -241,7 +249,10 @@ export default function EmbeddedViewer360({
     materialRef.current = material;
     scene.add(new THREE.Mesh(geometry, material));
 
-    if (foto[0]) loadTexture(foto[0].url);
+    // Niente loadTexture qui: lo fa il useEffect dedicato che dipende da
+    // currentFoto?.url e copre anche il primo render (undefined → url).
+    // Rimuovere il loadTexture(foto[0].url) evita closure stale su `foto`
+    // catturato al mount.
 
     const animate = () => {
       rafRef.current = requestAnimationFrame(animate);
