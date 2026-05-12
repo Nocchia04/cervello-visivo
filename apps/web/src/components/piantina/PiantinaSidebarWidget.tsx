@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import PiantinaCanvas from "./PiantinaCanvas";
 import DateDropdown from "./DateDropdown";
-import { GET_PIANTINA } from "@/graphql/queries";
+import { GET_PIANTINA, ME } from "@/graphql/queries";
 import {
   ELIMINA_PUNTO_DI_SCATTO,
   RINOMINA_PUNTO_DI_SCATTO,
@@ -72,11 +72,20 @@ export default function PiantinaSidebarWidget({
   const searchParams = useSearchParams();
   const isReadOnly = useIsReadOnly();
 
+  // Capabilities: edit-anything (add punto, modifica posizioni, rename,
+  // delete punto, delete foto) è permesso SOLO agli ADMIN.
+  // - share mode (isReadOnly=true) → no
+  // - utente CAPO_CANTIERE loggato → no (vede solo, non modifica)
+  // - admin loggato → sì
+  // La query ME è skip in share mode per evitare errori UNAUTHENTICATED.
+  const { data: meData } = useQuery(ME, { skip: isReadOnly });
+  const canEdit = !isReadOnly && meData?.me?.role === "ADMIN";
+
   // ── URL-driven state (single source of truth) ─────────────────────────────
   const selectedPuntoId = searchParams.get("punto");
   const selectedFotoIndex = parseInt(searchParams.get("foto") ?? "0", 10) || 0;
-  const addingPunto = !isReadOnly && searchParams.get("addP") === "1";
-  const editingPositions = !isReadOnly && searchParams.get("edit") === "1";
+  const addingPunto = canEdit && searchParams.get("addP") === "1";
+  const editingPositions = canEdit && searchParams.get("edit") === "1";
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -375,7 +384,7 @@ export default function PiantinaSidebarWidget({
         {!collapsed && (
           <>
             {/* ── Mini-toolbar (add / edit) — solo per admin ──────────────── */}
-            {!isReadOnly && (
+            {canEdit && (
               <div
                 className="flex items-center gap-1 px-2 py-1.5"
                 style={{
@@ -531,7 +540,7 @@ export default function PiantinaSidebarWidget({
                       <span className="text-xs flex-shrink-0" style={{ color: "var(--text-muted)" }}>
                         {selectedPunto.foto360.length} foto
                       </span>
-                      {!isReadOnly && (
+                      {canEdit && (
                         <div className="flex gap-0.5 flex-shrink-0">
                           <button
                             onClick={() => { setRenaming(true); setRenameValue(selectedPunto.nome); }}
@@ -578,7 +587,7 @@ export default function PiantinaSidebarWidget({
                     onSelect={(idx) => updateParams({ foto: String(idx) })}
                     open={dateOpen}
                     onToggle={() => setDateOpen(!dateOpen)}
-                    onDelete={isReadOnly ? undefined : handleDeleteFoto}
+                    onDelete={canEdit ? handleDeleteFoto : undefined}
                     openUpward
                   />
                 )}
