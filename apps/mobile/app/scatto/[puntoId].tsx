@@ -1,4 +1,7 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useQuery } from "@apollo/client";
+import { FOTO360_QUERY } from "../../src/graphql/queries";
+import { resolveMediaUrl } from "../../src/lib/mediaUrl";
 import {
   View,
   Text,
@@ -80,6 +83,36 @@ export default function ScattoScreen() {
     const interval = setInterval(refresh, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // ── Foto del giorno precedente per questo punto ───────────────────────────
+  // Mostriamo sopra la live preview l'ultima foto di questo punto scattata
+  // PRIMA del giorno corrente, così l'operatore vede com'era la scena ieri
+  // (o ancora prima se ieri non è stato scattato nulla) mentre allinea la
+  // camera per il nuovo scatto. Re-fetch cache-and-network per pescare le
+  // foto appena uploadate dopo il ritorno dalla schermata.
+  const { data: fotoData } = useQuery(FOTO360_QUERY, {
+    variables: { puntoId: puntoId as string },
+    skip: !puntoId,
+    fetchPolicy: "cache-and-network",
+  });
+
+  const previousDayFoto = useMemo(() => {
+    const fotos = (fotoData?.foto360 ?? []) as Array<{
+      id: string;
+      url: string;
+      thumbnailUrl: string | null;
+      timestamp: string;
+    }>;
+    if (fotos.length === 0) return null;
+    // Filtra foto con timestamp anteriore alla mezzanotte di oggi.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const cutoff = startOfToday.getTime();
+    const prev = fotos
+      .filter((f) => new Date(f.timestamp).getTime() < cutoff)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return prev[0] ?? null;
+  }, [fotoData]);
 
   // Auto-connette BLE all'apertura della schermata
   useEffect(() => {
@@ -454,6 +487,27 @@ export default function ScattoScreen() {
           )}
         </View>
 
+        {/* Foto del giorno precedente — riferimento per allineare la camera. */}
+        {previousDayFoto && (
+          <View style={styles.section}>
+            <View style={styles.previousFotoHeader}>
+              <Text style={styles.sectionLabel}>Ultima foto</Text>
+              <Text style={styles.previousFotoDate}>
+                {new Date(previousDayFoto.timestamp).toLocaleDateString("it-IT", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </Text>
+            </View>
+            <Image
+              source={{ uri: resolveMediaUrl(previousDayFoto.thumbnailUrl || previousDayFoto.url) }}
+              style={styles.previousFoto}
+              resizeMode="cover"
+            />
+          </View>
+        )}
+
         {/* Live Preview — richiede WiFi, disponibile solo quando BLE connesso */}
         {bleStatus === "connected" && (
           <View style={styles.section}>
@@ -689,6 +743,24 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textMuted,
     marginBottom: spacing.sm,
+  },
+
+  // Foto del giorno precedente (riferimento sopra la live preview)
+  previousFotoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  previousFotoDate: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
+  previousFoto: {
+    width: "100%",
+    aspectRatio: 2,            // equirettangolare 2:1, stesse proporzioni della live preview
+    borderRadius: radius.lg,
+    backgroundColor: colors.bg,
   },
 
   // Status — disconnected / connecting / error (centered card)
