@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,13 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { CANTIERI_QUERY } from '../../src/graphql/queries';
 import { UploadQueueBadge } from '../../src/components/UploadQueueBadge';
-import { removeAuthToken, removeUserData } from '../../src/lib/storage';
+import { TutorialVideoModal } from '../../src/components/TutorialVideoModal';
+import {
+  getTutorialSeen,
+  setTutorialSeen,
+  removeAuthToken,
+  removeUserData,
+} from '../../src/lib/storage';
 import { colors, spacing, radius, typography, shadow } from '../../src/lib/theme';
 
 interface CantiereItem {
@@ -59,8 +65,25 @@ const facadeStyles = StyleSheet.create({
 
 export default function CantieriScreen() {
   const [filter, setFilter] = useState<Filter>('tutti');
+  const [showTutorial, setShowTutorial] = useState(false);
   const { data, loading, error, refetch } = useQuery(CANTIERI_QUERY);
   const allCantieri: CantiereItem[] = data?.cantieri ?? [];
+
+  // Auto-apre il tutorial al primo accesso. Flag persistito in AsyncStorage
+  // così non si ripropone ad ogni apertura. Riapribile da impostazioni.
+  useEffect(() => {
+    let cancelled = false;
+    getTutorialSeen().then((seen) => {
+      if (!cancelled && !seen) setShowTutorial(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleTutorialClose = () => {
+    setShowTutorial(false);
+    // Best-effort: ignora errori storage (es. permessi)
+    setTutorialSeen().catch(() => {});
+  };
 
   const cantieri = allCantieri.filter(c => {
     if (filter === 'attivi') return c.stato === 'ATTIVO';
@@ -207,6 +230,8 @@ export default function CantieriScreen() {
           }
         />
       )}
+
+      <TutorialVideoModal visible={showTutorial} onClose={handleTutorialClose} />
     </SafeAreaView>
   );
 }

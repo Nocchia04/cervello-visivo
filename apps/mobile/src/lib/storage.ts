@@ -11,7 +11,20 @@ const STORAGE_KEYS = {
   THETA_BLE_DEVICE_NAME: "@cervello_visivo:theta_ble_device_name",
   THETA_BLE_PERIPHERAL_ID: "@cervello_visivo:theta_ble_peripheral_id",
   THETA_SETUP_COMPLETE: "@cervello_visivo:theta_setup_complete",
+  // Tutorial: auto-open al primo login, riapribile da impostazioni
+  TUTORIAL_SEEN: "@cervello_visivo:tutorial_seen",
 } as const;
+
+/** True se l'utente ha già visto il tutorial introduttivo almeno una volta */
+export async function getTutorialSeen(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(STORAGE_KEYS.TUTORIAL_SEEN);
+  return v === "true";
+}
+
+/** Segna il tutorial come visto (chiamato alla chiusura del modal). */
+export async function setTutorialSeen(): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEYS.TUTORIAL_SEEN, "true");
+}
 
 export async function getAuthToken(): Promise<string | null> {
   return AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);

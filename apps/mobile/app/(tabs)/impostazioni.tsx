@@ -23,6 +23,7 @@ import {
 } from '../../src/lib/storage';
 import { connectToCamera, disconnectFromCamera, cameraFetch, isLocationServicesEnabled } from '../../src/services/ricoh/ThetaWifi';
 import { scanAndConnect, disconnectBle } from '../../src/modules/theta/ble/ThetaBleService';
+import { TutorialVideoModal } from '../../src/components/TutorialVideoModal';
 import { colors, spacing, radius, typography, shadow } from '../../src/lib/theme';
 
 interface UserData {
@@ -49,6 +50,7 @@ type SetupStep =
 
 export default function ImpostazioniScreen() {
   const [user, setUser] = useState<UserData | null>(null);
+  const [tutorialVisible, setTutorialVisible] = useState(false);
 
   // WiFi credentials
   const [serial, setSerial] = useState('');
@@ -401,6 +403,17 @@ export default function ImpostazioniScreen() {
         {/* ── App ── */}
         <Text style={styles.sectionLabel}>Applicazione</Text>
         <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => setTutorialVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowMain}>
+              <Text style={styles.rowLabel}>Rivedi tutorial</Text>
+              <Text style={styles.rowSub}>Guarda di nuovo il video introduttivo</Text>
+            </View>
+            <Feather name="play-circle" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
           <View style={[styles.row, styles.rowLast]}>
             <View style={styles.rowMain}>
               <Text style={styles.rowLabel}>Versione</Text>
@@ -652,6 +665,11 @@ export default function ImpostazioniScreen() {
           </SafeAreaView>
         </KeyboardAvoidingView>
       </Modal>
+
+      <TutorialVideoModal
+        visible={tutorialVisible}
+        onClose={() => setTutorialVisible(false)}
+      />
     </SafeAreaView>
   );
 }

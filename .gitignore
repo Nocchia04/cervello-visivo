@@ -47,3 +47,6 @@ coverage/
 
 #aws-keys
 Cervello-visivo-server.pem
+
+# Tutorial video sorgente — versione compressa in apps/mobile/assets/videos/
+apps/mobile/src/tutorial_theta_2.mp4
