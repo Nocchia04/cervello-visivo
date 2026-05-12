@@ -307,3 +307,11 @@ export const ELIMINA_LINK_CONDIVISIONE = gql`
     }
   }
 `;
+
+export const CAMBIA_PASSWORD_OPERATORE = gql`
+  mutation CambiaPasswordOperatore($id: ID!, $nuovaPassword: String!) {
+    cambiaPasswordOperatore(id: $id, nuovaPassword: $nuovaPassword) {
+      id
+    }
+  }
+`;

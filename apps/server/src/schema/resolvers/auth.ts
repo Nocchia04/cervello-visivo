@@ -101,6 +101,44 @@ export const authResolvers = {
       return { token, user: newUser };
     },
 
+    /**
+     * Permette a un admin di reimpostare la password di un operatore
+     * (ruolo CAPO_CANTIERE). Validazione: solo admin, password minimo 8 char.
+     * Non possiamo cambiare password di altri admin per evitare lockout reciproci.
+     */
+    cambiaPasswordOperatore: async (
+      _parent: unknown,
+      args: { id: string; nuovaPassword: string },
+      ctx: GraphQLContext
+    ) => {
+      if (!ctx.user || ctx.user.role !== "ADMIN") {
+        throw new GraphQLError("Non autorizzato", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+      if (!args.nuovaPassword || args.nuovaPassword.length < 8) {
+        throw new GraphQLError("La password deve essere lunga almeno 8 caratteri", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const user = await ctx.prisma.user.findUnique({ where: { id: args.id } });
+      if (!user) {
+        throw new GraphQLError("Utente non trovato", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      if (user.role === "ADMIN") {
+        throw new GraphQLError("Non puoi modificare la password di un admin", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+      const hashed = await bcrypt.hash(args.nuovaPassword, 12);
+      return ctx.prisma.user.update({
+        where: { id: args.id },
+        data: { password: hashed },
+      });
+    },
+
     eliminaOperatore: async (
       _parent: unknown,
       args: { id: string },

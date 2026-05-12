@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
-import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2 } from "lucide-react";
+import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound } from "lucide-react";
 import { GET_UTENTI, GET_CANTIERI } from "@/graphql/queries";
-import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE } from "@/graphql/mutations";
+import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE, CAMBIA_PASSWORD_OPERATORE } from "@/graphql/mutations";
 
 interface CantiereAssegnato {
   id: string;
@@ -96,6 +96,158 @@ function CreaOperatoreModal({ onClose, onSuccess }: { onClose: () => void; onSuc
   );
 }
 
+// ── Modal cambia password operatore ───────────────────────────────────────────
+
+function CambiaPasswordModal({
+  user,
+  onClose,
+  onSuccess,
+}: {
+  user: { id: string; nome: string; cognome: string; email: string };
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+
+  const [cambiaPassword, { loading }] = useMutation(CAMBIA_PASSWORD_OPERATORE, {
+    onCompleted: () => {
+      onSuccess();
+      onClose();
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (password.length < 8) {
+      setError("La password deve essere lunga almeno 8 caratteri.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Le due password non coincidono.");
+      return;
+    }
+    cambiaPassword({ variables: { id: user.id, nuovaPassword: password } });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.6)" }}
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: "var(--accent)", color: "#fff" }}
+            >
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold truncate">Modifica password</h2>
+              <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>
+                {user.nome} {user.cognome} · {user.email}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="btn-ghost p-1.5 -mt-1 -mr-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Nuova password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                className="input-field pr-10"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                placeholder="Almeno 8 caratteri"
+                required
+                minLength={8}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 btn-ghost p-1"
+                style={{ color: "var(--text-muted)" }}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Conferma password</label>
+            <input
+              type={showPassword ? "text" : "password"}
+              className="input-field"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Ripeti la nuova password"
+              required
+              minLength={8}
+            />
+          </div>
+
+          {error && (
+            <p
+              className="text-sm px-3 py-2 rounded-lg"
+              style={{
+                color: "var(--danger)",
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.2)",
+              }}
+            >
+              {error}
+            </p>
+          )}
+
+          <p
+            className="text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
+            L'operatore dovrà usare questa nuova password al prossimo accesso. Comunicagliela in un canale sicuro.
+          </p>
+
+          <div className="flex gap-3 mt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary flex-1"
+              disabled={loading}
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              className="btn-primary flex-1"
+              disabled={loading || !password || !confirm}
+            >
+              {loading ? "Aggiorno..." : "Aggiorna password"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Riga cantiere nel pannello assegnazioni ───────────────────────────────────
 
 function CantiereRow({
@@ -179,6 +331,7 @@ export default function AdminPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
+  const [passwordUserId, setPasswordUserId] = useState<string | null>(null);
 
   const { data: utentiData, loading: utentiLoading, refetch: refetchUtenti } = useQuery(GET_UTENTI);
   const { data: cantieriData } = useQuery(GET_CANTIERI, { variables: { includiArchiviati: false } });
@@ -388,14 +541,23 @@ export default function AdminPage() {
                       </button>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => setConfirmDeleteUserId(selectedUser.id)}
-                      className="btn-ghost p-2"
-                      title="Elimina operatore"
-                      style={{ color: "var(--danger)" }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setPasswordUserId(selectedUser.id)}
+                        className="btn-ghost p-2"
+                        title="Modifica password operatore"
+                      >
+                        <KeyRound className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteUserId(selectedUser.id)}
+                        className="btn-ghost p-2"
+                        title="Elimina operatore"
+                        style={{ color: "var(--danger)" }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -442,6 +604,18 @@ export default function AdminPage() {
           onSuccess={() => refetchUtenti()}
         />
       )}
+
+      {passwordUserId && (() => {
+        const target = operatori.find((u) => u.id === passwordUserId);
+        if (!target) return null;
+        return (
+          <CambiaPasswordModal
+            user={target}
+            onClose={() => setPasswordUserId(null)}
+            onSuccess={() => refetchUtenti()}
+          />
+        );
+      })()}
     </div>
   );
 }

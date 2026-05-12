@@ -35,4 +35,9 @@ type Mutation {
   ): AuthPayload!
   creaOperatore(email: String!, password: String!, nome: String!, cognome: String!): AuthPayload!
   eliminaOperatore(id: ID!): User!
+  """
+  Reimposta la password di un operatore (CAPO_CANTIERE).
+  Solo admin. Password minimo 8 caratteri.
+  """
+  cambiaPasswordOperatore(id: ID!, nuovaPassword: String!): User!
 }
