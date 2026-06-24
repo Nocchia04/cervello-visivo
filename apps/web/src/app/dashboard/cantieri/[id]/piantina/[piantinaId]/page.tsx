@@ -18,7 +18,7 @@ import DateDropdown from "@/components/piantina/DateDropdown";
 import { GET_PIANTINA } from "@/graphql/queries";
 import { UPLOAD_FOTO360, ELIMINA_FOTO360 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
-import { safeDate } from "@/lib/dateUtils";
+import { safeDate, parseDateFromFilename } from "@/lib/dateUtils";
 
 const EmbeddedViewer360 = dynamic(
   () => import("@/components/foto360/EmbeddedViewer360"),
@@ -107,7 +107,14 @@ function UploadFotoButton({
     try {
       for (const file of Array.from(files)) {
         const url = await uploadFile(file);
-        await uploadFoto360({ variables: { puntoDiScattoId: puntoId, url } });
+        const taken = parseDateFromFilename(file.name);
+        await uploadFoto360({
+          variables: {
+            puntoDiScattoId: puntoId,
+            url,
+            timestamp: taken ? taken.toISOString() : null,
+          },
+        });
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload fallito");
