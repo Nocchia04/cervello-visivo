@@ -80,6 +80,7 @@ export const foto360Resolvers = {
         url: string;
         thumbnailUrl?: string;
         metadata?: unknown;
+        timestamp?: string | null;
       },
       ctx: GraphQLContext
     ) => {
@@ -94,6 +95,14 @@ export const foto360Resolvers = {
         });
       }
 
+      // Data di scatto opzionale (es. estratta dal nome del file).
+      // Se assente o non valida, Prisma usa il default @default(now()).
+      let scattoTimestamp: Date | undefined;
+      if (args.timestamp) {
+        const parsed = new Date(args.timestamp);
+        if (!isNaN(parsed.getTime())) scattoTimestamp = parsed;
+      }
+
       return ctx.prisma.foto360.create({
         data: {
           puntoDiScattoId: args.puntoDiScattoId,
@@ -101,6 +110,7 @@ export const foto360Resolvers = {
           thumbnailUrl: args.thumbnailUrl ?? null,
           metadata: args.metadata ? JSON.parse(JSON.stringify(args.metadata)) : undefined,
           uploadedById: user.userId,
+          ...(scattoTimestamp ? { timestamp: scattoTimestamp } : {}),
         },
       });
     },

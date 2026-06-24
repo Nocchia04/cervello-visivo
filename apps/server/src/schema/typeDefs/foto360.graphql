@@ -23,6 +23,7 @@ extend type Mutation {
     url: String!
     thumbnailUrl: String
     metadata: JSON
+    timestamp: String
   ): Foto360!
   eliminaFoto360(id: ID!): Foto360!
 }
