@@ -153,14 +153,12 @@ export const UPLOAD_FOTO360 = gql`
     $url: String!
     $thumbnailUrl: String
     $metadata: JSON
-    $timestamp: String
   ) {
     uploadFoto360(
       puntoDiScattoId: $puntoDiScattoId
       url: $url
       thumbnailUrl: $thumbnailUrl
       metadata: $metadata
-      timestamp: $timestamp
     ) {
       id
       url

@@ -9,7 +9,7 @@ import { GET_FOTO360 } from "@/graphql/queries";
 import { UPLOAD_FOTO360 } from "@/graphql/mutations";
 import SplitView from "@/components/foto360/SplitView";
 import { uploadFile } from "@/lib/upload";
-import { safeDate, parseDateFromFilename } from "@/lib/dateUtils";
+import { safeDate } from "@/lib/dateUtils";
 
 const EmbeddedViewer360 = dynamic(
   () => import("@/components/foto360/EmbeddedViewer360"),
@@ -43,14 +43,7 @@ function UploadButton({ puntoId, onDone }: { puntoId: string; onDone: () => void
     try {
       for (let i = 0; i < arr.length; i++) {
         const url = await uploadFile(arr[i]);
-        const taken = parseDateFromFilename(arr[i].name);
-        await uploadFoto360({
-          variables: {
-            puntoDiScattoId: puntoId,
-            url,
-            timestamp: taken ? taken.toISOString() : null,
-          },
-        });
+        await uploadFoto360({ variables: { puntoDiScattoId: puntoId, url } });
         setProgress(Math.round(((i + 1) / arr.length) * 100));
       }
     } finally {
