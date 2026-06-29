@@ -11,12 +11,22 @@ import { consumeImportJob, cleanupImportJob } from "../../lib/importJobs.js";
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-/** Copia un file estratto in /uploads con nome uuid, ritorna l'URL pubblico. */
+/**
+ * Base URL pubblica del server, per salvare URL ASSOLUTE come fa il resto
+ * dell'app (nel flusso normale è il client a prefissare SERVER_URL). In prod
+ * default al dominio API; override con PUBLIC_BASE_URL (es. in locale
+ * http://localhost:4000).
+ */
+const PUBLIC_BASE_URL = (
+  process.env.PUBLIC_BASE_URL || "https://api.holobuilderino.com"
+).replace(/\/+$/, "");
+
+/** Copia un file estratto in /uploads con nome uuid, ritorna l'URL pubblico ASSOLUTO. */
 function copyToUploads(srcAbs: string): string {
   const ext = (path.extname(srcAbs) || ".jpg").toLowerCase();
   const name = `${randomUUID()}${ext}`;
   fs.copyFileSync(srcAbs, path.join(UPLOADS_DIR, name));
-  return `/uploads/${name}`;
+  return `${PUBLIC_BASE_URL}/uploads/${name}`;
 }
 
 export const importResolvers = {
