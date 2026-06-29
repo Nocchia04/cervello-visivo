@@ -16,10 +16,10 @@ import { CANTIERE_QUERY } from "../../src/graphql/queries";
 import { PiantinaMap } from "../../src/components/PiantinaMap";
 import { UploadQueueBadge } from "../../src/components/UploadQueueBadge";
 import { colors, spacing, radius, typography, shadow } from "../../src/lib/theme";
-import { performBleConnect, BleNoSetupError } from "../../src/modules/theta/ble/autoConnect";
-import { isBluetoothConnected, onConnectionChange } from "../../src/modules/theta/ble/ThetaBleService";
+import { getCameraSerial } from "../../src/lib/storage";
+import { capturePipeline } from "../../src/services/theta/CapturePipeline";
 
-type BleGateStatus = "connecting" | "connected" | "no_setup" | "error";
+type CameraGateStatus = "checking" | "ok" | "no_setup";
 
 interface PuntoDiScatto {
   id: string;
@@ -49,54 +49,32 @@ export default function PiantinaScreen() {
   const [tabAnim] = useState(() => new Animated.Value(0));
   const [tabContainerWidth, setTabContainerWidth] = useState(0);
 
-  // ── BLE gate ────────────────────────────────────────────────────────────
-  const [bleStatus, setBleStatus] = useState<BleGateStatus>(
-    isBluetoothConnected() ? "connected" : "connecting"
-  );
-  const [bleError, setBleError] = useState<string>("");
-  const bleAttemptRef = useRef(0);
+  // ── Camera gate (passivo) ─────────────────────────────────────────────────
+  // Verifica solo che la camera sia configurata (seriale in storage).
+  // La CONNESSIONE avviene nella schermata di scatto (sessione SDK):
+  // qui nessun WiFi/dialogo Android.
+  const [cameraGate, setCameraGate] = useState<CameraGateStatus>("checking");
 
-  const connectBle = useCallback(async () => {
-    const attempt = ++bleAttemptRef.current;
-    setBleStatus("connecting");
-    setBleError("");
-    try {
-      await performBleConnect();
-      if (bleAttemptRef.current !== attempt) return; // superato da nuovo tentativo
-      setBleStatus("connected");
-    } catch (err) {
-      if (bleAttemptRef.current !== attempt) return;
-      if (err instanceof BleNoSetupError) {
-        setBleStatus("no_setup");
-      } else {
-        setBleError(err instanceof Error ? err.message : "Errore sconosciuto");
-        setBleStatus("error");
-      }
-    }
-  }, []);
-
-  // Ricolleghiamo al focus ogni volta che si torna su questa schermata
   useFocusEffect(
     useCallback(() => {
-      if (!isBluetoothConnected()) {
-        connectBle();
-      } else {
-        setBleStatus("connected");
-      }
-    }, [connectBle])
+      let cancelled = false;
+      getCameraSerial()
+        .then((s) => {
+          if (!cancelled) setCameraGate(s ? "ok" : "no_setup");
+        })
+        .catch(() => {
+          if (!cancelled) setCameraGate("no_setup");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
   );
 
-  // Ascolta disconnessioni runtime (camera spenta / out-of-range)
-  useEffect(() => {
-    return onConnectionChange((connected) => {
-      if (connected) {
-        setBleStatus("connected");
-      } else if (bleStatus === "connected") {
-        // Disconnessione inaspettata — riavvia ciclo
-        connectBle();
-      }
-    });
-  }, [bleStatus, connectBle]);
+  // Foto in salvataggio in background (download full dalla camera dopo la
+  // conferma): l'operatore deve sapere di non spegnere la camera.
+  const [savingCount, setSavingCount] = useState(capturePipeline.getPending());
+  useEffect(() => capturePipeline.onPendingChange(setSavingCount), []);
 
   const { data, loading, error } = useQuery(CANTIERE_QUERY, {
     variables: { id: cantiereId },
@@ -186,6 +164,16 @@ export default function PiantinaScreen() {
         <UploadQueueBadge />
       </View>
 
+      {/* ── Banner "in salvataggio" (download full in background) ── */}
+      {savingCount > 0 && (
+        <View style={styles.savingBanner}>
+          <ActivityIndicator size="small" color={colors.warning} />
+          <Text style={styles.savingBannerText}>
+            {savingCount} {savingCount === 1 ? "scatto" : "scatti"} in salvataggio — tieni accesa la camera e non chiudere l'app
+          </Text>
+        </View>
+      )}
+
       {/* ── Floor tabs ── */}
       {piantine.length > 1 && (
         <View style={styles.tabsContainer}>
@@ -269,65 +257,26 @@ export default function PiantinaScreen() {
         )}
       </View>
 
-      {/* ── BLE gate overlay ── */}
-      {bleStatus !== "connected" && (
+      {/* ── Camera gate overlay (solo se non configurata) ── */}
+      {cameraGate === "no_setup" && (
         <View style={styles.bleOverlay} pointerEvents="auto">
           <View style={styles.bleCard}>
-            {bleStatus === "connecting" && (
-              <>
-                <ActivityIndicator size="large" color={colors.accent} />
-                <Text style={styles.bleTitle}>Connessione camera...</Text>
-                <Text style={styles.bleSubtitle}>
-                  Attendi che la camera RICOH THETA sia connessa via Bluetooth prima di continuare.
-                </Text>
-              </>
-            )}
-
-            {bleStatus === "error" && (
-              <>
-                <Feather name="alert-triangle" size={40} color={colors.danger} />
-                <Text style={styles.bleTitle}>Connessione fallita</Text>
-                <Text style={styles.bleSubtitle}>
-                  {bleError || "Verifica che la camera sia accesa e vicina al telefono."}
-                </Text>
-                <TouchableOpacity
-                  style={styles.bleBtnPrimary}
-                  onPress={connectBle}
-                  activeOpacity={0.85}
-                >
-                  <Feather name="refresh-cw" size={16} color={colors.white} />
-                  <Text style={styles.bleBtnPrimaryText}>Riprova</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.bleBtnGhost}
-                  onPress={() => router.back()}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.bleBtnGhostText}>Torna indietro</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {bleStatus === "no_setup" && (
-              <>
-                <Feather name="settings" size={40} color={colors.accent} />
-                <Text style={styles.bleTitle}>Camera non configurata</Text>
-                <Text style={styles.bleSubtitle}>
-                  Configura prima la camera nelle Impostazioni per poter scattare.
-                </Text>
-                <TouchableOpacity
-                  style={styles.bleBtnPrimary}
-                  onPress={() => {
-                    router.back();
-                    router.push("/(tabs)/impostazioni");
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Feather name="settings" size={16} color={colors.white} />
-                  <Text style={styles.bleBtnPrimaryText}>Vai alle Impostazioni</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <Feather name="settings" size={40} color={colors.accent} />
+            <Text style={styles.bleTitle}>Camera non configurata</Text>
+            <Text style={styles.bleSubtitle}>
+              Inserisci le credenziali della camera nelle Impostazioni per poter scattare.
+            </Text>
+            <TouchableOpacity
+              style={styles.bleBtnPrimary}
+              onPress={() => {
+                router.back();
+                router.push("/(tabs)/impostazioni");
+              }}
+              activeOpacity={0.85}
+            >
+              <Feather name="settings" size={16} color={colors.white} />
+              <Text style={styles.bleBtnPrimaryText}>Vai alle Impostazioni</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -533,6 +482,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: colors.white,
+  },
+
+  // ── Banner salvataggio in background ──
+  savingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.warningLight,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  savingBannerText: {
+    ...typography.caption,
+    color: colors.warning,
+    flex: 1,
   },
 
   // ── BLE gate overlay ──

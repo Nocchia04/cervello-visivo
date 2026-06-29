@@ -4,7 +4,7 @@
  * Ogni entry ha timestamp, livello e messaggio.
  */
 
-export type LogLevel = "INFO" | "WARN" | "ERROR" | "BLE" | "WIFI" | "CAM";
+export type LogLevel = "INFO" | "WARN" | "ERROR" | "BLE" | "WIFI" | "CAM" | "PREV";
 
 export interface LogEntry {
   ts: number;

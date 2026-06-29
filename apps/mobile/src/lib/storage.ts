@@ -11,6 +11,8 @@ const STORAGE_KEYS = {
   THETA_BLE_DEVICE_NAME: "@cervello_visivo:theta_ble_device_name",
   THETA_BLE_PERIPHERAL_ID: "@cervello_visivo:theta_ble_peripheral_id",
   THETA_SETUP_COMPLETE: "@cervello_visivo:theta_setup_complete",
+  // Modello camera rilevato dall'SDK al setup (THETA_V | THETA_SC2 | THETA_SC2_B)
+  CAMERA_MODEL: "@cervello_visivo:camera_model",
   // Tutorial: auto-open al primo login, riapribile da impostazioni
   TUTORIAL_SEEN: "@cervello_visivo:tutorial_seen",
 } as const;
@@ -129,6 +131,32 @@ export async function clearThetaBleCredentials(): Promise<void> {
     AsyncStorage.removeItem(STORAGE_KEYS.THETA_BLE_PERIPHERAL_ID),
     AsyncStorage.removeItem(STORAGE_KEYS.THETA_SETUP_COMPLETE),
   ]);
+}
+
+// ── Modello camera (rilevato dall'SDK theta-client al setup) ─────────────────
+
+/** Salva il modello camera rilevato (es. "THETA_V", "THETA_SC2", "THETA_SC2_B") */
+export async function setCameraModel(model: string): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEYS.CAMERA_MODEL, model);
+}
+
+/** Legge il modello camera salvato, o null se mai rilevato */
+export async function getCameraModel(): Promise<string | null> {
+  return AsyncStorage.getItem(STORAGE_KEYS.CAMERA_MODEL);
+}
+
+/**
+ * Pulizia chiavi legacy dello stack BLE rimosso (migrazione all'SDK ufficiale
+ * theta-client: lo scatto è WiFi-only, il BLE non esiste più).
+ * Chiamata una volta all'avvio app; idempotente.
+ */
+export async function clearLegacyBleKeys(): Promise<void> {
+  await Promise.all([
+    AsyncStorage.removeItem(STORAGE_KEYS.THETA_BLE_UUID),
+    AsyncStorage.removeItem(STORAGE_KEYS.THETA_BLE_DEVICE_NAME),
+    AsyncStorage.removeItem(STORAGE_KEYS.THETA_BLE_PERIPHERAL_ID),
+    AsyncStorage.removeItem(STORAGE_KEYS.THETA_SETUP_COMPLETE),
+  ]).catch(() => {});
 }
 
 export { STORAGE_KEYS };

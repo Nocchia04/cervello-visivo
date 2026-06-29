@@ -2,15 +2,17 @@
  * ThetaWifi — Bridge JS verso il modulo nativo Android ThetaWifiModule.
  *
  * Android (10+): usa WifiNetworkSpecifier per connettere al WiFi camera
- * senza perdere i dati mobili. Tutte le richieste HTTP alla camera
- * usano network.openConnection() — nessun bindProcessToNetwork necessario.
+ * senza perdere i dati mobili.
  *
- * Live preview MJPEG: implementato nativamente in ThetaWifiModule.kt.
- * startMjpegPreview() apre lo stream OSC camera.getLivePreview e
- * emette eventi THETA_FRAME_EVENT con {data: "data:image/jpeg;base64,..."}
+ * Ruolo nella nuova architettura (SDK ufficiale theta-client):
+ *  - connectToCamera/disconnectFromCamera: gestione rete camera (l'SDK non la fa)
+ *  - bindToCameraNetwork/unbind: bindProcessToNetwork richiesto dall'SDK
+ *    (Ktor usa la rete di default del processo) — orchestrato da ThetaSession
+ *  - downloadFileViaCameraNetwork: download foto (l'SDK non ha API di download)
+ *  - onWifiLost: evento per invalidare la sessione SDK
  *
- * iOS / Android < 10: fallback a fetch normale. iOS gestisce
- * il dual-stack WiFi+cellulare automaticamente.
+ * Il control-plane OSC (scatto, opzioni, stato) è in ThetaSession via SDK.
+ * La live preview MJPEG è in ThetaPreviewView.kt (Network esplicita).
  */
 import {
   NativeModules,
@@ -105,24 +107,18 @@ export async function connectToCamera(
   await requestWifiPermission();
   dlog('WIFI', 'Permessi OK, connessione...');
 
-  // Retry: Android a volte rate-limita WifiNetworkSpecifier dopo rapidi disconnetti/riconnetti
-  let lastError: any = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      await ThetaWifiModule.connectToCamera(ssid, password);
-      dlog('WIFI', `WiFi connesso OK (tentativo ${attempt})`);
-      return;
-    } catch (e: any) {
-      lastError = e;
-      dlog('WIFI', `Tentativo ${attempt} fallito: ${e?.message ?? e}`);
-      if (attempt < 3) {
-        // Disconnect + pausa crescente per evitare rate limiting
-        try { await ThetaWifiModule.disconnectFromCamera(); } catch {}
-        await new Promise((r) => setTimeout(r, attempt * 2000));
-      }
-    }
+  // Un solo tentativo. Il timeout nativo è generoso (60s) → l'operatore ha
+  // tempo di trovare e toccare il dialogo "Connetti a THETA?". NIENTE
+  // auto-retry con disconnectFromCamera: cancellava il dialogo che l'utente
+  // stava per toccare ("L'applicazione ha annullato la richiesta..."). In
+  // caso di fallimento il chiamante mostra l'errore e l'utente ritenta a mano.
+  try {
+    await ThetaWifiModule.connectToCamera(ssid, password);
+    dlog('WIFI', 'WiFi connesso OK');
+  } catch (e: any) {
+    dlog('WIFI', `Connessione fallita: ${e?.message ?? e}`);
+    throw e;
   }
-  throw lastError ?? new Error('WiFi connect fallito dopo 3 tentativi');
 }
 
 export async function disconnectFromCamera(): Promise<void> {
@@ -137,30 +133,6 @@ export async function isCameraWifiConnected(): Promise<boolean> {
 }
 
 /**
- * Esegue una richiesta HTTP verso la camera.
- * Su Android 10+: usa l'OkHttpClient legato alla rete camera (mantiene internet).
- * Altrove: usa fetch normale.
- */
-export async function cameraFetch(
-  url: string,
-  method: string = "GET",
-  body?: string
-): Promise<{ status: number; body: string }> {
-  if (isAndroid10Plus && ThetaWifiModule) {
-    return ThetaWifiModule.makeRequest(url, method, body ?? null);
-  }
-  // Fallback: fetch standard (iOS, Android < 10, emulatore)
-  const response = await fetch(url, {
-    method,
-    headers: body
-      ? { "Content-Type": "application/json; charset=utf-8" }
-      : undefined,
-    body,
-  });
-  return { status: response.status, body: await response.text() };
-}
-
-/**
  * Scarica un file binario dalla camera via la rete WiFi camera (Android 10+).
  * Usa network.openConnection() nel modulo nativo — non richiede bindProcessToNetwork.
  * @param url       URL del file sulla camera (es. http://192.168.1.1/files/...)
@@ -169,13 +141,17 @@ export async function cameraFetch(
 export async function downloadFileViaCameraNetwork(
   url: string,
   destPath: string
-): Promise<string> {
+): Promise<{ path: string; diag: string[] }> {
   if (isAndroid10Plus && ThetaWifiModule) {
-    return ThetaWifiModule.downloadFileToCameraNetwork(url, destPath);
+    // Il nativo risolve { path, diag:[...] } — la diag è la diagnostica
+    // del transfer (ramo, HEAD, per-chunk/per-segmento, KB/s) da mostrare
+    // nel Debug Log in-app.
+    const res = await ThetaWifiModule.downloadFileToCameraNetwork(url, destPath);
+    return { path: res?.path ?? destPath, diag: res?.diag ?? [] };
   }
   // iOS / Android < 10: il download avviene tramite expo-file-system direttamente
   // (il chiamante gestisce questo caso)
-  return destPath;
+  return { path: destPath, diag: [] };
 }
 
 /**
@@ -199,11 +175,32 @@ export async function unbindFromCameraNetwork(): Promise<void> {
 }
 
 /**
+ * "Scatta" salvando l'ultimo frame della live preview (1024×512) come JPEG
+ * in [destPath]. Zero download dalla camera. Richiede preview attiva.
+ */
+export async function capturePreviewFrame(destPath: string): Promise<string> {
+  if (!isAndroid10Plus || !ThetaWifiModule) {
+    throw new Error("Cattura frame disponibile solo su Android 10+");
+  }
+  return ThetaWifiModule.capturePreviewFrame(destPath);
+}
+
+/**
  * Diagnostica: restituisce info sulla rete camera (interface, IP, routes).
  */
 export async function getCameraNetworkInfo(): Promise<string> {
   if (!isAndroid10Plus || !ThetaWifiModule) return "Non supportato su questa piattaforma";
   return ThetaWifiModule.getNetworkInfo();
+}
+
+/**
+ * Diagnostica dual-STA: numero di reti WiFi attive OLTRE alla rete camera.
+ * > 0 = il telefono tiene un secondo WiFi (casa/ufficio) in parallelo:
+ * la radio è time-sliced e il link camera si strozza (~50 KB/s).
+ */
+export async function countOtherWifiNetworks(): Promise<number> {
+  if (!isAndroid10Plus || !ThetaWifiModule) return 0;
+  return ThetaWifiModule.countOtherWifiNetworks();
 }
 
 /**

@@ -31,6 +31,8 @@ export interface QueueItem {
   timestamp: string;
   retryCount: number;
   status: "pending" | "uploading" | "failed";
+  /** Se true, NON ridimensionare (immagine già piccola, es. frame preview 1024px). */
+  skipResize?: boolean;
 }
 
 const MAX_RETRIES = 3;
@@ -102,26 +104,28 @@ class UploadQueueService {
     const serverBaseUrl = getServerBaseUrl();
 
     // 1. Ridimensiona la foto prima dell'upload — riduce ~70% di banda
-    // mobile e accelera l'upload sul 4G/5G. Il file pieno originale resta
-    // su disco finché non avviene il cleanup (handleConferma elimina
-    // l'originale al ritorno alla piantina).
+    // mobile e accelera l'upload sul 4G/5G. Saltato per le immagini già
+    // piccole (frame preview 1024px): ridimensionarle a 3072px sarebbe un
+    // upscaling inutile e dannoso.
     let uploadUri = item.localUri;
     let resizedCacheUri: string | null = null;
-    try {
-      const resized = await ImageManipulator.manipulateAsync(
-        item.localUri,
-        [{ resize: { width: UPLOAD_MAX_WIDTH } }],
-        {
-          compress: UPLOAD_JPEG_QUALITY,
-          format: ImageManipulator.SaveFormat.JPEG,
-        }
-      );
-      uploadUri = resized.uri;
-      resizedCacheUri = resized.uri;
-    } catch (e) {
-      // Se il resize fallisce (file corrotto, lib non disponibile, ecc.),
-      // fai fallback all'originale: meglio upload più lento che fallimento.
-      console.warn("[UploadQueue] Resize fallito, fallback all'originale:", e);
+    if (!item.skipResize) {
+      try {
+        const resized = await ImageManipulator.manipulateAsync(
+          item.localUri,
+          [{ resize: { width: UPLOAD_MAX_WIDTH } }],
+          {
+            compress: UPLOAD_JPEG_QUALITY,
+            format: ImageManipulator.SaveFormat.JPEG,
+          }
+        );
+        uploadUri = resized.uri;
+        resizedCacheUri = resized.uri;
+      } catch (e) {
+        // Se il resize fallisce (file corrotto, lib non disponibile, ecc.),
+        // fai fallback all'originale: meglio upload più lento che fallimento.
+        console.warn("[UploadQueue] Resize fallito, fallback all'originale:", e);
+      }
     }
 
     // 2. Upload del file ridimensionato (o originale se resize fallito)

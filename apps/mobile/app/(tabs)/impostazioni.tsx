@@ -19,11 +19,13 @@ import { Feather } from '@expo/vector-icons';
 import {
   getUserData, removeAuthToken, removeUserData,
   getCameraSerialAndPassword, setCameraSerial,
-  getThetaBleCredentials, setThetaBleCredentials, clearThetaBleCredentials,
+  getCameraModel,
 } from '../../src/lib/storage';
-import { connectToCamera, disconnectFromCamera, cameraFetch, isLocationServicesEnabled } from '../../src/services/ricoh/ThetaWifi';
-import { scanAndConnect, disconnectBle } from '../../src/modules/theta/ble/ThetaBleService';
+import { isLocationServicesEnabled } from '../../src/services/ricoh/ThetaWifi';
+import { thetaSession, getModelLabel, ThetaModel } from '../../src/services/theta/ThetaSession';
+import { WlanFrequencyEnum } from 'theta-client-react-native';
 import { TutorialVideoModal } from '../../src/components/TutorialVideoModal';
+import { DebugLogOverlay } from '../../src/components/DebugLogOverlay';
 import { colors, spacing, radius, typography, shadow } from '../../src/lib/theme';
 
 interface UserData {
@@ -33,18 +35,10 @@ interface UserData {
   role?: string;
 }
 
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
 type SetupStep =
   | 'idle'
   | 'wifi_connecting'
-  | 'registering_ble'
-  | 'ble_connecting'
+  | 'initializing'
   | 'done'
   | 'error';
 
@@ -60,16 +54,17 @@ export default function ImpostazioniScreen() {
   const [editPassword, setEditPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // BLE setup state
-  const [bleDeviceName, setBleDeviceName] = useState<string | null>(null);
-  const [bleSetupDone, setBleSetupDone] = useState(false);
+  // Camera setup state (verifica via SDK: connetti + initialize + rileva modello)
+  const [cameraModel, setCameraModelState] = useState<string | null>(null);
   const [setupStep, setSetupStep] = useState<SetupStep>('idle');
   const [setupStatusMsg, setSetupStatusMsg] = useState('');
   const [setupError, setSetupError] = useState('');
   const [setupModalVisible, setSetupModalVisible] = useState(false);
+  const [showDebugLog, setShowDebugLog] = useState(false);
+
+  const setupDone = cameraModel !== null;
 
   const isAndroid10 = Platform.OS === 'android' && (Platform.Version as number) >= 29;
-  const isAndroid13 = Platform.OS === 'android' && (Platform.Version as number) >= 33;
 
   useEffect(() => {
     getUserData<UserData>().then(setUser);
@@ -77,10 +72,7 @@ export default function ImpostazioniScreen() {
       setSerial(s ?? '');
       setCamPassword(p ?? '');
     });
-    getThetaBleCredentials().then(({ deviceName, setupComplete }) => {
-      setBleDeviceName(deviceName);
-      setBleSetupDone(setupComplete);
-    });
+    getCameraModel().then(setCameraModelState).catch(() => {});
   }, []);
 
   // ── WiFi credentials ──────────────────────────────────────────────────────
@@ -100,7 +92,7 @@ export default function ImpostazioniScreen() {
     setCredModalVisible(false);
   }, [editSerial, editPassword]);
 
-  // ── Camera Setup (WiFi → BLE register → BLE verify) ──────────────────────
+  // ── Verifica Camera (SDK ufficiale: connetti → initialize → rileva modello) ──
 
   const openSetupModal = useCallback(() => {
     if (!serial) {
@@ -117,135 +109,49 @@ export default function ImpostazioniScreen() {
   }, [serial]);
 
   /**
-   * Setup completo:
-   * 1. WifiNetworkSpecifier → connette al WiFi camera (internet rimane via dati)
-   * 2. HTTP POST camera._setBluetoothDevice (via network.openConnection)
-   * 3. HTTP POST camera.setOptions { _bluetoothPower: "ON" }
-   * 4. BLE scan + connect + auth (verifica che BLE funzioni)
-   * 5. Salva bleUuid + deviceName
-   * 6. Disconnetti BLE e WiFi
+   * Verifica camera con l'SDK ufficiale theta-client:
+   * 1. WifiNetworkSpecifier → WiFi camera (internet resta via dati mobili)
+   * 2. initialize() SDK → getThetaInfo → modello rilevato e salvato
+   * 3. THETA V: abilita WiFi 5GHz (download 3-5× più veloci; soft-fail su SC2)
+   * 4. Disconnetti — la connessione di lavoro avviene nella schermata scatto
    */
   const runSetup = useCallback(async () => {
     const ssid = `THETA${serial}.OSC`;
-    const password = camPassword;
-    const CAMERA_URL = 'http://192.168.1.1';
 
     try {
-      // ── Pre-check: Posizione di sistema attiva ──
+      // ── Pre-check: Posizione di sistema attiva (Android 10-12) ──
       setSetupStep('wifi_connecting');
       setSetupStatusMsg('Verifica servizi di posizione...');
       const locationOn = await isLocationServicesEnabled();
       if (!locationOn) {
-        throw new Error(
-          'LOCATION_DISABLED'
-        );
+        throw new Error('LOCATION_DISABLED');
       }
 
-      // ── Step 1: WiFi ──
-      setSetupStatusMsg(`Connessione WiFi a ${ssid}...\n\nATTENZIONE: apparirà un dialogo Android — tocca "Connetti" per procedere.`);
-      await connectToCamera(ssid, password);
-      setSetupStatusMsg('WiFi connesso. Registro dispositivo BLE...');
+      // ── Step 1: connetti + inizializza SDK (rileva il modello) ──
+      setSetupStatusMsg(`Connessione a ${ssid}...\n\nATTENZIONE: apparirà un dialogo Android — tocca "Connetti" per procedere.`);
+      await thetaSession.ensureConnected(ssid, camPassword);
 
-      // ── Step 2: Registra BLE UUID via HTTP (usa rete camera, non fetch normale) ──
-      setSetupStep('registering_ble');
-      const bleUuid = generateUUID();
+      setSetupStep('initializing');
+      const model = thetaSession.getModel();
+      const detectedSerial = thetaSession.getSerial();
+      setSetupStatusMsg(`Rilevata ${getModelLabel(model)} (${detectedSerial ?? serial})`);
 
-      const setDeviceRes = await cameraFetch(
-        `${CAMERA_URL}/osc/commands/execute`,
-        'POST',
-        JSON.stringify({ name: 'camera._setBluetoothDevice', parameters: { uuid: bleUuid } })
-      );
-      if (setDeviceRes.status !== 200) throw new Error(`HTTP ${setDeviceRes.status} durante registrazione BLE`);
-      const setDeviceData = JSON.parse(setDeviceRes.body);
-      if (setDeviceData.state === 'error') {
-        throw new Error(`Errore camera: ${setDeviceData.error?.message ?? 'registrazione BLE fallita'}`);
-      }
-      const deviceName: string = setDeviceData.results?.deviceName;
-      if (!deviceName) throw new Error('deviceName non ricevuto dalla camera');
-      setSetupStatusMsg(`Device BLE: ${deviceName}. Abilito Bluetooth...`);
-
-      // ── Step 3a: Abilita BT sulla camera ──
-      const btRes = await cameraFetch(
-        `${CAMERA_URL}/osc/commands/execute`,
-        'POST',
-        JSON.stringify({ name: 'camera.setOptions', parameters: { options: { _bluetoothPower: 'ON' } } })
-      );
-      if (btRes.status !== 200) throw new Error(`HTTP ${btRes.status} abilitazione BT`);
-      const btData = JSON.parse(btRes.body);
-      if (btData.state === 'error') {
-        throw new Error(`Errore camera: ${btData.error?.message ?? 'abilitazione BT fallita'}`);
+      // ── Step 2: THETA V → WiFi 5GHz (cambiando banda l'AP della camera
+      // si riavvia: la risposta può non arrivare — soft-fail by design).
+      // SC2/SC2_B non supportano 5GHz: l'opzione viene ignorata.
+      if (model === ThetaModel.THETA_V) {
+        setSetupStatusMsg('THETA V rilevata — abilito WiFi 5GHz...');
+        await thetaSession.trySetOptions({ wlanFrequency: WlanFrequencyEnum.GHZ_5 });
       }
 
-      // ── Step 3b: Imposta _bluetoothRole (necessario per THETA V/Z1/X) ──
-      // La SC2 ignora questa opzione (non la supporta) ma non fallisce.
-      // Senza questo la THETA V resta in modalità Central e non accetta writes BLE.
-      setSetupStatusMsg('Configurazione modalità Bluetooth...');
-      try {
-        const roleRes = await cameraFetch(
-          `${CAMERA_URL}/osc/commands/execute`,
-          'POST',
-          JSON.stringify({ name: 'camera.setOptions', parameters: { options: { _bluetoothRole: 'Central_Peripheral' } } })
-        );
-        // Se il camera non supporta l'opzione, logga ma non fallire
-        if (roleRes.status !== 200) {
-          console.log('_bluetoothRole non supportato (SC2?):', roleRes.status);
-        } else {
-          const roleData = JSON.parse(roleRes.body);
-          if (roleData.state === 'error') {
-            console.log('_bluetoothRole error (ignorato):', roleData.error?.message);
-          }
-        }
-      } catch (e) {
-        console.log('_bluetoothRole eccezione (ignorata):', e);
-      }
+      setCameraModelState(model);
 
-      // ── Step 3c: Imposta WiFi 5GHz (THETA V/Z1/X supportano, SC2 no) ──
-      // 5GHz aumenta drammaticamente la velocità di download foto.
-      // Soft-fail: se la camera non lo supporta (SC2), ignora.
-      setSetupStatusMsg('Configurazione WiFi 5GHz (se supportato)...');
-      try {
-        const wifiRes = await cameraFetch(
-          `${CAMERA_URL}/osc/commands/execute`,
-          'POST',
-          JSON.stringify({ name: 'camera.setOptions', parameters: { options: { _wlanFrequency: 5.0 } } })
-        );
-        if (wifiRes.status !== 200) {
-          console.log('_wlanFrequency 5GHz non supportato (SC2?):', wifiRes.status);
-        } else {
-          const wifiData = JSON.parse(wifiRes.body);
-          if (wifiData.state === 'error') {
-            console.log('_wlanFrequency 5GHz error (ignorato):', wifiData.error?.message);
-          }
-        }
-      } catch (e) {
-        console.log('_wlanFrequency eccezione (ignorata):', e);
-      }
-
-      // ── Step 4: Disconnetti WiFi ──
-      await disconnectFromCamera();
-      setSetupStatusMsg('WiFi disconnesso. Cerco la camera via Bluetooth...');
-
-      // ── Step 5: Verifica BLE (scan + connect + auth) ──
-      setSetupStep('ble_connecting');
-      // Attendi che il BT della camera si attivi dopo il comando setOptions.
-      // La SC2 impiega ~5s. Mostriamo un countdown per dare feedback visivo.
-      for (let remaining = 8; remaining > 0; remaining--) {
-        setSetupStatusMsg(`Attivazione Bluetooth camera... ${remaining}s`);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-      setSetupStatusMsg('Ricerca camera via Bluetooth...');
-      const peripheralId = await scanAndConnect(deviceName, bleUuid);
-      setSetupStatusMsg('BLE verificato!');
-
-      // ── Step 6: Salva ──
-      await setThetaBleCredentials(bleUuid, deviceName, peripheralId);
-      setBleDeviceName(deviceName);
-      setBleSetupDone(true);
+      // ── Step 3: chiudi la sessione (la verifica è un one-off; si riapre
+      //    nella schermata scatto). disconnect() = unbind + WiFi off.
+      await thetaSession.disconnect();
       setSetupStep('done');
     } catch (err) {
-      // Cleanup
-      try { await disconnectBle(); } catch {}
-      try { await disconnectFromCamera(); } catch {}
+      await thetaSession.disconnect().catch(() => {});
       const raw = err instanceof Error ? err.message : 'Errore sconosciuto';
       // Messaggio user-friendly per i casi più comuni
       const msg = raw === 'LOCATION_DISABLED'
@@ -259,25 +165,6 @@ export default function ImpostazioniScreen() {
       setSetupStep('error');
     }
   }, [serial, camPassword]);
-
-  const handleResetBle = useCallback(() => {
-    Alert.alert(
-      'Reset configurazione camera',
-      'Rimuovi la configurazione BLE? Dovrai ripetere il setup.',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            await clearThetaBleCredentials();
-            setBleDeviceName(null);
-            setBleSetupDone(false);
-          },
-        },
-      ]
-    );
-  }, []);
 
   const handleLogout = () => {
     Alert.alert('Esci', 'Vuoi davvero uscire?', [
@@ -350,43 +237,36 @@ export default function ImpostazioniScreen() {
             <Feather name="chevron-right" size={14} color={colors.borderStrong} />
           </TouchableOpacity>
 
-          {/* Setup/stato BLE */}
+          {/* Verifica camera (rileva modello via SDK) */}
           <TouchableOpacity
             style={[styles.row, styles.rowLast]}
-            onPress={bleSetupDone ? handleResetBle : openSetupModal}
+            onPress={openSetupModal}
             activeOpacity={0.7}
           >
-            <View style={[styles.iconWrap, { backgroundColor: bleSetupDone ? '#ECFDF5' : '#FEF3C7' }]}>
-              <Feather name={bleSetupDone ? 'check-circle' : 'settings'} size={16} color={bleSetupDone ? colors.success : '#D97706'} />
+            <View style={[styles.iconWrap, { backgroundColor: setupDone ? '#ECFDF5' : '#FEF3C7' }]}>
+              <Feather name={setupDone ? 'check-circle' : 'settings'} size={16} color={setupDone ? colors.success : '#D97706'} />
             </View>
             <View style={styles.rowMain}>
-              <Text style={styles.rowLabel}>{bleSetupDone ? 'Camera Configurata' : 'Configura Camera'}</Text>
+              <Text style={styles.rowLabel}>{setupDone ? 'Camera verificata' : 'Verifica Camera'}</Text>
               <Text style={styles.rowSub}>
-                {bleSetupDone
-                  ? `BLE attivo · Device: ${bleDeviceName}`
+                {setupDone
+                  ? `${getModelLabel(cameraModel)} · tocca per ri-verificare`
                   : serial
-                    ? 'Tocca per completare il setup BLE'
+                    ? 'Tocca per verificare la connessione e rilevare il modello'
                     : 'Inserisci prima il numero di serie'}
               </Text>
             </View>
-            {bleSetupDone ? (
-              <View style={styles.rowRight}>
-                <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
-                <Text style={[styles.rowValue, { color: colors.textSubtle }]}>Reset</Text>
-              </View>
-            ) : (
-              <Feather name="chevron-right" size={14} color={colors.borderStrong} />
-            )}
+            <Feather name="chevron-right" size={14} color={colors.borderStrong} />
           </TouchableOpacity>
         </View>
 
         {/* Info */}
-        {bleSetupDone ? (
+        {setupDone ? (
           <View style={styles.infoCard}>
             <Feather name="zap" size={14} color={colors.success} />
             <Text style={[styles.infoText, { color: colors.success }]}>
-              Scatto via Bluetooth — nessun WiFi necessario per scattare.
-              Internet rimane sempre attivo durante l'utilizzo.
+              {getModelLabel(cameraModel)} pronta. Lo scatto si connette
+              automaticamente alla camera — internet resta attivo via dati mobili.
             </Text>
           </View>
         ) : (
@@ -394,7 +274,7 @@ export default function ImpostazioniScreen() {
             <Feather name="info" size={14} color={colors.accent} />
             <Text style={styles.infoText}>
               {isAndroid10
-                ? 'Completa il setup per scattare via Bluetooth mantenendo internet attivo.'
+                ? 'Inserisci le credenziali e verifica la camera: il modello viene rilevato automaticamente.'
                 : 'Connettiti manualmente alla rete WiFi della Ricoh Theta per scattare.'}
             </Text>
           </View>
@@ -404,7 +284,7 @@ export default function ImpostazioniScreen() {
         <Text style={styles.sectionLabel}>Applicazione</Text>
         <View style={styles.card}>
           <TouchableOpacity
-            style={styles.row}
+            style={[styles.row, styles.rowBorder]}
             onPress={() => setTutorialVisible(true)}
             activeOpacity={0.7}
           >
@@ -413,6 +293,17 @@ export default function ImpostazioniScreen() {
               <Text style={styles.rowSub}>Guarda di nuovo il video introduttivo</Text>
             </View>
             <Feather name="play-circle" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.row, styles.rowBorder]}
+            onPress={() => setShowDebugLog(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowMain}>
+              <Text style={styles.rowLabel}>Log diagnostico</Text>
+              <Text style={styles.rowSub}>Dettagli tecnici di connessione e scatto</Text>
+            </View>
+            <Feather name="file-text" size={18} color={colors.textMuted} />
           </TouchableOpacity>
           <View style={[styles.row, styles.rowLast]}>
             <View style={styles.rowMain}>
@@ -458,14 +349,13 @@ export default function ImpostazioniScreen() {
               <>
                 <View style={styles.stepCard}>
                   <Text style={[typography.h4, { color: colors.text, marginBottom: spacing.md }]}>
-                    Cosa succede durante il setup:
+                    Cosa succede durante la verifica:
                   </Text>
                   {[
                     { n: '1', text: `L'app si connette al WiFi della camera (${serial ? `THETA${serial}.OSC` : '...'}) mantenendo internet attivo via dati mobili` },
-                    { n: '2', text: 'Registra questo telefono come dispositivo Bluetooth della camera' },
-                    { n: '3', text: 'Attiva il Bluetooth sulla camera' },
-                    { n: '4', text: 'Verifica la connessione BLE (Bluetooth)' },
-                    { n: '5', text: 'Da ora puoi scattare via Bluetooth — nessun WiFi necessario!' },
+                    { n: '2', text: 'Rileva automaticamente il modello (THETA V, SC2, SC2 Business)' },
+                    { n: '3', text: 'Applica le impostazioni ottimali per il modello (es. WiFi 5GHz su THETA V)' },
+                    { n: '4', text: 'Da ora la schermata di scatto si connette automaticamente alla camera' },
                   ].map(({ n, text }) => (
                     <View key={n} style={styles.stepRow}>
                       <View style={styles.stepNum}><Text style={styles.stepNumText}>{n}</Text></View>
@@ -488,7 +378,7 @@ export default function ImpostazioniScreen() {
 
                 <TouchableOpacity style={styles.saveBtn} onPress={runSetup} activeOpacity={0.85}>
                   <Feather name="zap" size={16} color={colors.white} />
-                  <Text style={styles.saveBtnText}>Avvia Setup</Text>
+                  <Text style={styles.saveBtnText}>Avvia Verifica</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -499,9 +389,8 @@ export default function ImpostazioniScreen() {
                 <ActivityIndicator size="large" color={colors.accent} />
                 <View style={{ alignItems: 'center', gap: spacing.sm }}>
                   <Text style={[typography.h4, { color: colors.text, textAlign: 'center' }]}>
-                    {setupStep === 'wifi_connecting' && 'Connessione WiFi...'}
-                    {setupStep === 'registering_ble' && 'Registrazione BLE...'}
-                    {setupStep === 'ble_connecting' && 'Verifica Bluetooth...'}
+                    {setupStep === 'wifi_connecting' && 'Connessione camera...'}
+                    {setupStep === 'initializing' && 'Configurazione modello...'}
                   </Text>
                   {!!setupStatusMsg && (
                     <Text style={[styles.rowSub, { textAlign: 'center' }]}>{setupStatusMsg}</Text>
@@ -521,13 +410,13 @@ export default function ImpostazioniScreen() {
 
                 {/* Step indicator */}
                 <View style={styles.stepIndicator}>
-                  {(['wifi_connecting', 'registering_ble', 'ble_connecting'] as SetupStep[]).map((s, i) => (
+                  {(['wifi_connecting', 'initializing'] as SetupStep[]).map((s, i) => (
                     <View
                       key={s}
                       style={[
                         styles.stepDot,
                         setupStep === s && styles.stepDotActive,
-                        (['wifi_connecting', 'registering_ble', 'ble_connecting'] as SetupStep[]).indexOf(setupStep) > i && styles.stepDotDone,
+                        (['wifi_connecting', 'initializing'] as SetupStep[]).indexOf(setupStep) > i && styles.stepDotDone,
                       ]}
                     />
                   ))}
@@ -540,11 +429,11 @@ export default function ImpostazioniScreen() {
               <View style={[styles.stepCard, { alignItems: 'center', gap: spacing.lg }]}>
                 <Feather name="check-circle" size={48} color={colors.success} />
                 <Text style={[typography.h3, { color: colors.success, textAlign: 'center' }]}>
-                  Camera configurata!
+                  Camera verificata!
                 </Text>
                 <Text style={[styles.rowSub, { textAlign: 'center' }]}>
-                  Bluetooth attivo · Device: <Text style={{ fontWeight: '700', color: colors.text }}>{bleDeviceName}</Text>
-                  {'\n\n'}Puoi ora scattare senza connettere manualmente il WiFi.
+                  Modello: <Text style={{ fontWeight: '700', color: colors.text }}>{getModelLabel(cameraModel)}</Text>
+                  {'\n\n'}La schermata di scatto si connetterà automaticamente alla camera.
                 </Text>
                 <TouchableOpacity
                   style={styles.saveBtn}
@@ -670,6 +559,8 @@ export default function ImpostazioniScreen() {
         visible={tutorialVisible}
         onClose={() => setTutorialVisible(false)}
       />
+
+      <DebugLogOverlay visible={showDebugLog} onClose={() => setShowDebugLog(false)} />
     </SafeAreaView>
   );
 }

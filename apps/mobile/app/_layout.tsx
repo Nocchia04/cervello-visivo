@@ -4,11 +4,19 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { apolloClient } from '../src/lib/apollo-client';
 import { uploadWorker } from '../src/services/upload/UploadWorker';
+import { capturePipeline } from '../src/services/theta/CapturePipeline';
+import { clearLegacyBleKeys } from '../src/lib/storage';
 import { colors } from '../src/lib/theme';
 
 export default function RootLayout() {
   useEffect(() => {
     uploadWorker.start();
+    // Recupero scatti interrotti: se l'app è stata chiusa durante un download
+    // 5K, carica il frame salvato come fallback → lo scatto non si perde.
+    capturePipeline.resumePending().catch(() => {});
+    // Migrazione SDK theta-client: lo stack BLE non esiste più, pulisci
+    // le chiavi legacy per evitare stati fantasma (idempotente).
+    clearLegacyBleKeys();
     return () => uploadWorker.stop();
   }, []);
 

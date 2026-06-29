@@ -26,7 +26,12 @@ class ThetaPreviewViewManager : SimpleViewManager<ThetaPreviewView>() {
             val network = reactAppCtx
                 .getNativeModule(ThetaWifiModule::class.java)
                 ?.getCameraNetwork()
-                ?: return
+            if (network == null) {
+                // Niente return silenzioso: JS crederebbe streaming=true con
+                // la preview nativa spenta (spinner infinito, niente retry).
+                view.notifyPreviewUnavailable()
+                return
+            }
             view.startPreview(network)
         } else {
             view.stopPreview()

@@ -12,7 +12,6 @@ import {
   ScrollView,
   Image,
   Modal,
-  Platform,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Stack } from "expo-router";
@@ -20,16 +19,8 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ricohClient } from "../../src/services/ricoh/RicohClient";
-import { connectToCamera, isCameraWifiConnected, unbindFromCameraNetwork } from "../../src/services/ricoh/ThetaWifi";
-import { CAMERA_ERROR_MESSAGES } from "../../src/services/ricoh/constants";
-import {
-  takePictureViaBle,
-  disconnectBle,
-  isBluetoothConnected,
-} from "../../src/modules/theta/ble/ThetaBleService";
-import { performBleConnect, BleNoSetupError } from "../../src/modules/theta/ble/autoConnect";
-import { getCameraCredentials, getThetaBleCredentials } from "../../src/lib/storage";
+import { thetaSession, getModelLabel } from "../../src/services/theta/ThetaSession";
+import { getCameraCredentials } from "../../src/lib/storage";
 import { uploadQueue } from "../../src/services/upload/UploadQueue";
 import { RicohPreview } from "../../src/components/RicohPreview";
 import type { RicohPreviewHandle } from "../../src/components/RicohPreview";
@@ -39,7 +30,17 @@ import { DebugLogOverlay } from "../../src/components/DebugLogOverlay";
 import { colors, spacing, radius, typography, shadow } from "../../src/lib/theme";
 import { dlog } from "../../src/lib/debugLog";
 
-type BleStatus = "idle" | "connecting" | "connected" | "error" | "no_setup";
+type CameraStatus = "idle" | "connecting" | "ready" | "error" | "no_setup";
+
+function modelLabel(): string {
+  return getModelLabel(thetaSession.getModel());
+}
+
+/** True se l'errore è un fallimento di CONNESSIONE (comando mai arrivato). */
+function isConnectError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /ailed to connect|ECONNREFUSED|ETIMEDOUT|unreachable|NOT_CONNECTED/i.test(msg);
+}
 
 export default function ScattoScreen() {
   const { puntoId, puntoNome, piantinaId, piantinaNome } = useLocalSearchParams<{
@@ -54,8 +55,8 @@ export default function ScattoScreen() {
 
   const [cameraCredentials, setCameraCredentials] = useState<{ ssid: string | null; password: string | null }>({ ssid: null, password: null });
 
-  const [bleStatus, setBleStatus] = useState<BleStatus>("idle");
-  const [bleStatusMsg, setBleStatusMsg] = useState("");
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>("idle");
+  const [cameraStatusMsg, setCameraStatusMsg] = useState("");
   const [showDebugLog, setShowDebugLog] = useState(false);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
@@ -63,18 +64,17 @@ export default function ScattoScreen() {
   const [lastPhotoUri, setLastPhotoUri] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
 
-  // Pending photo waiting for user confirmation before upload.
-  // Scarichiamo il file pieno dalla camera prima di mostrare l'anteprima
-  // (qualità nativa nel viewer 360°). La banda WiFi 2.4 GHz della SC2 limita
-  // il transfer fisico a ~3-5 MB/s: il modulo nativo Android usa chunks
-  // paralleli HTTP Range con buffer ampi per saturare il canale. Dopo la
-  // conferma la UploadQueue ridimensiona la foto a max 3072px prima di
-  // uploadare al backend (~70% in meno di banda mobile).
+  // Scatto in attesa di conferma. Contiene il JPEG 5K (5376×2688) GIÀ scaricato
+  // dalla camera sul telefono: lo scatto mostra una schermata di caricamento
+  // durante il download, poi questa preview 360° a piena risoluzione. Alla
+  // conferma il file va alla coda di upload (persistita) che lo carica in
+  // background ridimensionandolo a 3072px.
   const [pendingPhoto, setPendingPhoto] = useState<{
-    localUri: string;
+    localUri: string;     // JPEG 5K scaricato, mostrato in preview 360° e poi caricato
     queueId: string;
     timestamp: string;
   } | null>(null);
+
 
   // Refresh pending count periodically
   useEffect(() => {
@@ -114,249 +114,148 @@ export default function ScattoScreen() {
     return prev[0] ?? null;
   }, [fotoData]);
 
-  // Auto-connette BLE all'apertura della schermata
-  useEffect(() => {
-    let cancelled = false;
+  // Connessione sessione camera (SDK theta-client) all'apertura della schermata.
+  // ensureConnected: WiFi (WifiNetworkSpecifier, dialogo Android al primo uso)
+  // → bind processo → initialize SDK → modello rilevato → PhotoCapture pronto.
+  const connectCamera = useCallback(async (cancelledRef?: { cancelled: boolean }) => {
+    const isCancelled = () => cancelledRef?.cancelled === true;
 
-    // Carica le credenziali WiFi camera per passarle al preview
-    getCameraCredentials().then(({ ssid, password }) => {
-      if (!cancelled) setCameraCredentials({ ssid: ssid ?? null, password: password ?? null });
-    }).catch(() => {});
+    const { ssid, password } = await getCameraCredentials();
+    if (isCancelled()) return;
+    setCameraCredentials({ ssid: ssid ?? null, password: password ?? null });
 
-    async function autoConnect() {
-      // Se già connessa (es. si torna allo screen senza aver chiuso l'app), non riscannare
-      if (isBluetoothConnected()) {
-        const { deviceName } = await getThetaBleCredentials();
-        if (!cancelled) {
-          setBleStatus("connected");
-          setBleStatusMsg(deviceName ?? "RICOH THETA SC2");
-          // Non chiamiamo loadCameraFiles qui: richiede WiFi che non è ancora connesso
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setBleStatus("connecting");
-        setBleStatusMsg("Ricerca camera...");
-      }
-      try {
-        const deviceName = await performBleConnect();
-        if (!cancelled) {
-          setBleStatus("connected");
-          setBleStatusMsg(deviceName);
-          // Non chiamiamo loadCameraFiles qui: richiede WiFi che non è ancora connesso.
-          // Verrà caricato automaticamente dopo lo scatto o quando l'utente avvia la preview.
-        }
-      } catch (err) {
-        if (!cancelled) {
-          if (err instanceof BleNoSetupError) {
-            setBleStatus("no_setup");
-          } else {
-            setBleStatus("error");
-            setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
-          }
-        }
-      }
+    if (!ssid) {
+      setCameraStatus("no_setup");
+      return;
     }
 
-    autoConnect();
+    setCameraStatus("connecting");
+    setCameraStatusMsg("Connessione alla camera...");
+    try {
+      await thetaSession.ensureConnected(ssid, password ?? "");
+      if (isCancelled()) return;
+      setCameraStatus("ready");
+      setCameraStatusMsg(thetaSession.getSerial() ?? "");
+      // Batteria: best-effort, una sola richiesta
+      thetaSession.getBatteryLevel().then((b) => {
+        if (!isCancelled() && b !== null) setBatteryLevel(b);
+      });
+    } catch (err) {
+      if (isCancelled()) return;
+      dlog("CAM", `Connessione sessione fallita: ${err instanceof Error ? err.message : err}`);
+      setCameraStatus("error");
+      setCameraStatusMsg(
+        isConnectError(err)
+          ? "Camera non raggiungibile. Verifica che sia accesa e vicina, poi riprova."
+          : err instanceof Error ? err.message : "Errore di connessione"
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const ref = { cancelled: false };
+    connectCamera(ref);
+
+    // Se la sessione cade mentre siamo sullo screen (sleep camera, RF),
+    // riflettiamo lo stato così la UI mostra il retry.
+    const unsubscribe = thetaSession.onStatusChange((s) => {
+      if (ref.cancelled) return;
+      if (s === "disconnected") {
+        setCameraStatus((prev) => {
+          if (prev !== "ready") return prev;
+          setCameraStatusMsg("Connessione camera persa. Riprova.");
+          return "error";
+        });
+      }
+    });
 
     return () => {
-      cancelled = true;
-      // Non disconnettere BLE: _device è singleton, rimane connesso tra schermate.
-      // Teardown completo del preview: stopLivePreview + unbind + disconnetti WiFi.
+      ref.cancelled = true;
+      unsubscribe();
+      // Stop SOLO lo stream MJPEG. La SESSIONE camera resta viva tra gli
+      // screen (la chiude ThetaSession quando l'app va in background): così
+      // il download 5K in background sopravvive al ritorno in piantina e il
+      // rientro su un altro punto è istantaneo (niente riconnessione WiFi).
       previewRef.current?.cleanup().catch(() => {});
-      // Unbind di sicurezza: se cleanup viene chiamato mentre il bind è ancora attivo
-      unbindFromCameraNetwork().catch(() => {});
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const retryBleConnect = useCallback(async () => {
-    setBleStatus("connecting");
-    setBleStatusMsg("Ricerca camera...");
-    try {
-      const deviceName = await performBleConnect();
-      setBleStatus("connected");
-      setBleStatusMsg(deviceName);
-    } catch (err) {
-      if (err instanceof BleNoSetupError) {
-        setBleStatus("no_setup");
-      } else {
-        setBleStatus("error");
-        setBleStatusMsg(err instanceof Error ? err.message : "Errore BLE");
-      }
-    }
-  }, []);
+  const retryConnect = useCallback(() => {
+    connectCamera();
+  }, [connectCamera]);
 
   const takePicture = useCallback(async () => {
-    if (bleStatus !== "connected") return;
+    if (cameraStatus !== "ready") return;
 
     setIsTakingPicture(true);
-    setTakingStep("");
-    // Aspetta che la socket MJPEG sia chiusa e la camera abbia liberato
-    // la banda WiFi (cruciale su SC2 con antenna 2.4GHz condivisa BLE+WiFi).
-    // Il grace period è già incluso dentro stopStream (~250ms).
-    await previewRef.current?.stopStream();
-
-    const isAndroid10 = Platform.OS === "android" && (Platform.Version as number) >= 29;
-
-    // Helper: assicura WiFi camera connesso (necessario per getState/download)
-    const ensureWifi = async () => {
-      if (!isAndroid10) return;
-      const alreadyConnected = await isCameraWifiConnected();
-      if (!alreadyConnected) {
-        const { ssid, password } = await getCameraCredentials();
-        if (ssid) await connectToCamera(ssid, password ?? "");
-      }
-    };
-
-    // Helper: pollinga _latestFileUrl finché non cambia rispetto al baseline
-    // Ritorna la nuova fileUrl, o null se timeout.
-    const pollForNewPhoto = async (
-      baselineUrl: string | null | undefined,
-      maxMs: number
-    ): Promise<string | null> => {
-      const start = Date.now();
-      while (Date.now() - start < maxMs) {
-        await new Promise((r) => setTimeout(r, 2000));
-        try {
-          const s = await ricohClient.getState();
-          const url = s.state._latestFileUrl;
-          if (url && url !== baselineUrl) return url;
-        } catch {
-          // transient WiFi error — ignora e riprova
-        }
-      }
-      return null;
-    };
+    setTakingStep("Scatto in corso...");
 
     try {
-      // ── 0. Snapshot stato pre-scatto (per detectare nuovi file) ──────────
-      setTakingStep("Preparazione...");
-      await ensureWifi();
-      let baselineUrl: string | null = null;
-      try {
-        const preState = await ricohClient.getState();
-        baselineUrl = preState.state._latestFileUrl ?? null;
-        setBatteryLevel(Math.round(preState.state.batteryLevel * 100));
-      } catch { /* ignora, useremo baseline null */ }
+      // 1. Ferma lo stream MJPEG: occupa l'httpd single-thread della camera e
+      //    ~3-4 MB/s della banda 2.4GHz → senza stop il download 5K crolla.
+      await previewRef.current?.stopStream().catch(() => {});
 
-      // ── 0.5 Forza opzioni leggere prima dello scatto BLE ──────────────
-      //
-      // captureMode "image":
-      //   La SC2 dopo getLivePreview rimane in modalità _liveStreaming.
-      //   In quello stato, BLE TAKE_PICTURE viene interpretato come START
-      //   di un video ("Rec" sul display) e la notify 0x00 non arriva mai.
-      //   La V esce auto da _liveStreaming, quindi è no-op idempotente.
-      //   Rif: TethaDocs/theta-client tutorial-react-native.md — il client
-      //   ufficiale Ricoh chiama sempre setOptions{captureMode:"image"}.
-      //
-      // _filter "off":
-      //   Disabilita HDR / NoiseReduction post-processing che producono
-      //   file più grandi (e download più lenti). Specie sulla SC2 consumer
-      //   con preset LENS_BY_LENS_EXPOSURE di default, il filter pesante
-      //   può raddoppiare la dimensione del JPEG. La SC2 Business ha già
-      //   default più leggeri (preset ROOM).
-      //
-      // sleepDelay / offDelay 65535:
-      //   Disabilita sleep e auto-power-off durante la sessione. Sulla SC2
-      //   consumer (firmware standard) il sleep aggressivo riduce il
-      //   throughput WiFi al primo download dopo inattività.
-      //
-      // trySetOptions è soft-fail: opzioni non supportate da uno specifico
-      // modello/firmware vengono ignorate senza far crashare il flusso.
-      await ricohClient.trySetOptions({
-        captureMode: "image",
-        _filter: "off",
-        sleepDelay: 65535,
-        offDelay: 65535,
-      });
+      // 2. SCATTO 5K (procedura ufficiale SDK: takePicture → fileUrl). Su SC2
+      //    l'IMAGE_5K è l'unica risoluzione (5376×2688).
+      const fileUrl = await thetaSession.takePhoto();
 
-      // ── 1. Scatto via BLE (nessun WiFi necessario) ────────────────────────
-      setTakingStep("Scatto...");
-      let fileUrl: string | null = null;
-      try {
-        await takePictureViaBle();
-        setTakingStep("Scatto completato. Download foto...");
-      } catch (bleErr) {
-        // BLE timeout/fail: sulla SC2 l'antenna condivisa può perdere la
-        // notifica BLE anche quando la camera HA effettivamente scattato.
-        // Fallback: polling getState per verificare se c'è un nuovo file.
-        dlog("CAM", `BLE scatto fallito: ${bleErr instanceof Error ? bleErr.message : bleErr} — fallback polling WiFi`);
-        setTakingStep("Verifica stato camera...");
-        await ensureWifi();
-        const found = await pollForNewPhoto(baselineUrl, 25_000);
-        if (!found) throw bleErr; // rilancia l'errore BLE originale
-        fileUrl = found;
-        dlog("CAM", `Polling ha trovato nuovo file dopo timeout BLE: ${fileUrl}`);
-      }
-
-      // ── 2. Connetti WiFi per download (se non già fatto) ─────────────────
-      await ensureWifi();
-
-      // ── 3. Se non abbiamo già la fileUrl dal polling, leggi stato camera ─
-      if (!fileUrl) {
-        setTakingStep("Lettura stato camera...");
-        const camState = await ricohClient.getState();
-        fileUrl = camState.state._latestFileUrl ?? null;
-        setBatteryLevel(Math.round(camState.state.batteryLevel * 100));
-
-        // Se ancora non c'è, fai un po' di polling anche qui (scatto appena fatto
-        // potrebbe non essere indicizzato immediatamente)
-        if (!fileUrl || fileUrl === baselineUrl) {
-          fileUrl = await pollForNewPhoto(baselineUrl, 10_000);
-        }
-
-        if (!fileUrl) {
-          const errorCode = camState.state._cameraError?.[0];
-          const errorMsg = errorCode
-            ? CAMERA_ERROR_MESSAGES[errorCode] ?? `Errore camera: ${errorCode}`
-            : "Nessun file trovato sulla camera — verifica che lo scatto sia andato a buon fine.";
-          throw new Error(errorMsg);
-        }
-      }
-
-      // ── 4. Scarica il file pieno dalla camera (full quality nel viewer 360).
-      // Il modulo nativo Android (downloadFileViaCameraNetwork) parallelizza
-      // 8 chunk HTTP Range con buffer 512KB per saturare la banda WiFi 2.4 GHz
-      // della SC2 (~3-5 MB/s effettivi). File 5-15 MB → ~2-5s tipici.
+      // 3. DOWNLOAD del JPEG pieno sul telefono (schermata di caricamento
+      //    visibile finché non è scaricato). Sulla SC2 il link 2.4GHz è lento
+      //    → può richiedere fino a ~1 minuto; è il collo di bottiglia hardware.
       setTakingStep("Download foto...");
-      const localUri = await ricohClient.downloadFile(fileUrl);
+      const localUri = await thetaSession.downloadPhoto(fileUrl);
 
       setTakingStep("");
-      const queueItemId = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      setPendingPhoto({ localUri, queueId: queueItemId, timestamp: new Date().toISOString() });
+      setIsTakingPicture(false);
+
+      // 4. Preview 360° a piena risoluzione → conferma/scarta.
+      const queueItemId = `theta_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      setPendingPhoto({
+        localUri,
+        queueId: queueItemId,
+        timestamp: new Date().toISOString(),
+      });
     } catch (err) {
       setTakingStep("");
-      Alert.alert("Errore scatto", err instanceof Error ? err.message : "Errore durante lo scatto");
-      previewRef.current?.startStream();
-    } finally {
       setIsTakingPicture(false);
+      dlog("CAM", `Scatto fallito: ${err instanceof Error ? err.message : err}`);
+      Alert.alert(
+        "Errore scatto",
+        isConnectError(err)
+          ? "Camera non raggiungibile durante lo scatto. Verifica che sia accesa e vicina."
+          : err instanceof Error ? err.message : "Errore durante lo scatto"
+      );
+      // Riavvia il mirino per riprovare.
+      await previewRef.current?.startStream().catch(() => {});
     }
-  }, [bleStatus]);
+  }, [cameraStatus]);
 
-  const handleConfermaPhoto = useCallback(async () => {
+  const handleConfermaPhoto = useCallback(() => {
     if (!pendingPhoto) return;
-    await uploadQueue.addToQueue({
-      id: pendingPhoto.queueId,
-      localUri: pendingPhoto.localUri,
-      puntoDiScattoId: puntoId as string,
-      timestamp: pendingPhoto.timestamp,
-    });
-    setLastPhotoUri(pendingPhoto.localUri);
-    uploadQueue.getPendingCount().then(setPendingCount);
+    const pp = pendingPhoto;
     setPendingPhoto(null);
-    // Torna alla piantina — lì riparte la riconnessione BLE per lo scatto successivo
+    // Il JPEG 5K è già sul telefono → upload in background via coda persistita
+    // (sopravvive alla chiusura app). La coda lo ridimensiona a 3072px.
+    uploadQueue.addToQueue({
+      id: pp.queueId,
+      localUri: pp.localUri,
+      puntoDiScattoId: puntoId as string,
+      timestamp: pp.timestamp,
+    });
+    uploadQueue.getPendingCount().then(setPendingCount);
+    setLastPhotoUri(pp.localUri);
     router.back();
   }, [pendingPhoto, puntoId]);
 
   const handleScartaPhoto = useCallback(async () => {
     if (!pendingPhoto) return;
-    try {
-      await FileSystem.deleteAsync(pendingPhoto.localUri, { idempotent: true });
-    } catch {}
+    const pp = pendingPhoto;
     setPendingPhoto(null);
-    previewRef.current?.startStream();
+    try {
+      await FileSystem.deleteAsync(pp.localUri, { idempotent: true });
+    } catch {}
+    await previewRef.current?.startStream().catch(() => {});
   }, [pendingPhoto]);
 
   const pickFromDevice = useCallback(async () => {
@@ -402,7 +301,7 @@ export default function ScattoScreen() {
     uploadQueue.getPendingCount().then(setPendingCount);
   }, []);
 
-  const isCapturing = bleStatus !== "connected" || isTakingPicture;
+  const isCapturing = cameraStatus !== "ready" || isTakingPicture;
 
   return (
     <>
@@ -426,55 +325,55 @@ export default function ScattoScreen() {
           <UploadQueueBadge />
         </View>
 
-        {/* Camera BLE status */}
+        {/* Camera status (sessione SDK theta-client) */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Fotocamera</Text>
 
-          {bleStatus === "no_setup" && (
+          {cameraStatus === "no_setup" && (
             <View style={styles.statusCardCentered}>
-              <Feather name="bluetooth" size={32} color={colors.textSubtle} />
-              <Text style={styles.statusCardTitle}>BLE non configurato</Text>
+              <Feather name="camera-off" size={32} color={colors.textSubtle} />
+              <Text style={styles.statusCardTitle}>Camera non configurata</Text>
               <Text style={styles.statusCardHint}>
-                Vai in Impostazioni e completa il setup della camera per abilitare lo scatto Bluetooth.
+                Vai in Impostazioni e inserisci numero di serie e password della camera.
               </Text>
             </View>
           )}
 
-          {bleStatus === "connecting" && (
+          {cameraStatus === "connecting" && (
             <View style={styles.statusCardCentered}>
               <ActivityIndicator color={colors.accent} size="large" />
-              <Text style={styles.connectingText}>Connessione BLE...</Text>
-              {!!bleStatusMsg && (
-                <Text style={styles.discoveryStatusText}>{bleStatusMsg}</Text>
+              <Text style={styles.connectingText}>Connessione camera...</Text>
+              {!!cameraStatusMsg && (
+                <Text style={styles.discoveryStatusText}>{cameraStatusMsg}</Text>
               )}
             </View>
           )}
 
-          {bleStatus === "connected" && (
+          {cameraStatus === "ready" && (
             <View style={styles.connectedRow}>
               <View style={styles.connectedDot} />
               <View style={styles.connectedInfo}>
-                <Text style={styles.connectedModel}>RICOH THETA SC2</Text>
+                <Text style={styles.connectedModel}>{modelLabel()}</Text>
                 <Text style={styles.batteryText}>
-                  BLE · {bleStatusMsg}
+                  WiFi · {cameraStatusMsg}
                   {batteryLevel !== null ? ` · Batteria ${batteryLevel}%` : ""}
                 </Text>
               </View>
-              <Feather name="bluetooth" size={18} color={colors.success} />
+              <Feather name="wifi" size={18} color={colors.success} />
             </View>
           )}
 
-          {bleStatus === "error" && (
+          {cameraStatus === "error" && (
             <View style={styles.errorCard}>
               <Feather name="alert-circle" size={32} color={colors.danger} />
-              <Text style={styles.errorText}>{bleStatusMsg}</Text>
-              <TouchableOpacity style={styles.retryConnectButton} onPress={retryBleConnect} activeOpacity={0.8}>
+              <Text style={styles.errorText}>{cameraStatusMsg}</Text>
+              <TouchableOpacity style={styles.retryConnectButton} onPress={retryConnect} activeOpacity={0.8}>
                 <Text style={styles.retryConnectText}>Riprova</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {(bleStatus === "idle") && (
+          {(cameraStatus === "idle") && (
             <View style={styles.statusCardCentered}>
               <ActivityIndicator color={colors.accent} size="large" />
               <Text style={styles.connectingText}>Avvio...</Text>
@@ -508,13 +407,13 @@ export default function ScattoScreen() {
           </View>
         )}
 
-        {/* Live Preview — richiede WiFi, disponibile solo quando BLE connesso */}
-        {bleStatus === "connected" && (
+        {/* Live Preview — disponibile quando la sessione camera è pronta */}
+        {cameraStatus === "ready" && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Live Preview</Text>
             <RicohPreview
               ref={previewRef}
-              isConnected={bleStatus === "connected"}
+              isConnected={cameraStatus === "ready"}
               ssid={cameraCredentials.ssid}
               password={cameraCredentials.password}
             />
@@ -544,12 +443,12 @@ export default function ScattoScreen() {
           <Text style={styles.captureLabel}>
             {isTakingPicture
               ? takingStep || "Scatto in corso..."
-              : bleStatus === "connected"
+              : cameraStatus === "ready"
               ? "Scatta 360°"
-              : bleStatus === "connecting"
-              ? "Connessione BLE..."
-              : bleStatus === "no_setup"
-              ? "Setup BLE richiesto"
+              : cameraStatus === "connecting"
+              ? "Connessione camera..."
+              : cameraStatus === "no_setup"
+              ? "Configurazione richiesta"
               : "Camera non connessa"}
           </Text>
         </View>
@@ -625,10 +524,10 @@ export default function ScattoScreen() {
           <View style={styles.captureOverlayInner}>
             <ActivityIndicator size="large" color={colors.white} />
             <Text style={styles.captureOverlayTitle}>
-              {takingStep.includes("Download") ? "Download foto in corso" : takingStep || "Scatto in corso"}
+              {takingStep || "Scatto in corso"}
             </Text>
             <Text style={styles.captureOverlaySubtitle}>
-              Attendi che la foto 360° sia pronta — non chiudere l'app.
+              Ci siamo quasi — non chiudere l'app.
             </Text>
           </View>
         </View>
@@ -655,9 +554,11 @@ export default function ScattoScreen() {
           {/* Top bar */}
           <View style={styles.previewTopBar} pointerEvents="box-none">
             <View style={styles.previewBadge}>
-              <Text style={styles.previewBadgeText}>Anteprima 360°</Text>
+              <Text style={styles.previewBadgeText}>Foto 360°</Text>
             </View>
-            <Text style={styles.previewHint}>Trascina per esplorare la foto</Text>
+            <Text style={styles.previewHint}>
+              Trascina per esplorare. Conferma per salvare.
+            </Text>
           </View>
 
           {/* Action buttons */}
@@ -674,7 +575,7 @@ export default function ScattoScreen() {
               onPress={handleConfermaPhoto}
               activeOpacity={0.85}
             >
-              <Text style={styles.confirmButtonText}>Conferma e carica</Text>
+              <Text style={styles.confirmButtonText}>Conferma</Text>
             </TouchableOpacity>
           </View>
         </View>
