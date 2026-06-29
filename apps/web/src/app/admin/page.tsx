@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
-import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound } from "lucide-react";
+import Link from "next/link";
+import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound, FileArchive } from "lucide-react";
 import { GET_UTENTI, GET_CANTIERI } from "@/graphql/queries";
 import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE, CAMBIA_PASSWORD_OPERATORE } from "@/graphql/mutations";
 
@@ -381,10 +382,16 @@ export default function AdminPage() {
             Gestisci operatori e assegnazioni cantieri
           </p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary">
-          <Plus className="w-4 h-4" />
-          Nuovo operatore
-        </button>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/importa" className="btn-secondary">
+            <FileArchive className="w-4 h-4" />
+            Importa da HoloBuilder
+          </Link>
+          <button onClick={() => setShowModal(true)} className="btn-primary">
+            <Plus className="w-4 h-4" />
+            Nuovo operatore
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

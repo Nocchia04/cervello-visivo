@@ -16,3 +16,19 @@ export const NUOVA_ANNOTAZIONE = gql`
     }
   }
 `;
+
+export const IMPORT_PROGRESS = gql`
+  subscription ImportProgress($jobId: ID!) {
+    importProgress(jobId: $jobId) {
+      fase
+      correnti
+      totali
+      messaggio
+      avvisiCount
+      erroriCount
+      completato
+      errore
+      cantiereId
+    }
+  }
+`;

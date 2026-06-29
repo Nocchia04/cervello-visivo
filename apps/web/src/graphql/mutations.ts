@@ -315,3 +315,32 @@ export const CAMBIA_PASSWORD_OPERATORE = gql`
     }
   }
 `;
+
+export const CONFERMA_IMPORT_HOLOBUILDER = gql`
+  mutation ConfermaImportHolobuilder(
+    $jobId: ID!
+    $nome: String!
+    $indirizzo: String!
+    $skipFotoSenzaData: Boolean
+  ) {
+    confermaImportHolobuilder(
+      jobId: $jobId
+      nome: $nome
+      indirizzo: $indirizzo
+      skipFotoSenzaData: $skipFotoSenzaData
+    ) {
+      stato
+      cantiereId
+      piantineCreate
+      puntiCreati
+      fotoCreate
+      issues {
+        severita
+        categoria
+        percorso
+        messaggio
+        azione
+      }
+    }
+  }
+`;
