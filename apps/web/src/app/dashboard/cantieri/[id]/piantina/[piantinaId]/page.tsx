@@ -15,7 +15,7 @@ import {
 import dynamic from "next/dynamic";
 import PiantinaSidebarWidget from "@/components/piantina/PiantinaSidebarWidget";
 import DateDropdown from "@/components/piantina/DateDropdown";
-import { GET_PIANTINA } from "@/graphql/queries";
+import { GET_PIANTINA, GET_CANTIERE } from "@/graphql/queries";
 import { UPLOAD_FOTO360, ELIMINA_FOTO360 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
@@ -227,6 +227,13 @@ export default function PiantinaPage() {
   const { data, loading, refetch } = useQuery(GET_PIANTINA, {
     variables: { id: piantinaId },
   });
+
+  // Nome cantiere per l'etichetta fluttuante in alto a sinistra.
+  const { data: cantiereData } = useQuery(GET_CANTIERE, {
+    variables: { id: params.id as string },
+    skip: !params.id,
+  });
+  const cantiereNome: string | undefined = cantiereData?.cantiere?.nome;
 
   const [eliminaFoto] = useMutation(ELIMINA_FOTO360, {
     onCompleted: () => refetch(),
@@ -584,6 +591,53 @@ export default function PiantinaPage() {
           </p>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          Etichetta cantiere + piantina — fluttuante in alto a sinistra
+          ═══════════════════════════════════════════════════════════════════ */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          left: 12,
+          zIndex: 30,
+          maxWidth: "55%",
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(8px)",
+          borderRadius: 12,
+          padding: "8px 14px",
+          color: "#fff",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {cantiereNome ?? "Cantiere"}
+        </div>
+        {piantina?.nome && (
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              opacity: 0.75,
+              marginTop: 2,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {piantina.nome}
+          </div>
+        )}
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
           Floating Toolbar — top right
