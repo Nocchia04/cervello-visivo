@@ -59,7 +59,7 @@ export default function PuntoDiScattoMarker({
     >
       {/* Marker pin */}
       <div
-        className="relative flex items-center justify-center w-8 h-8 rounded-full transition-all duration-150"
+        className="relative flex items-center justify-center w-6 h-6 rounded-full transition-all duration-150"
         style={{
           background: bodyColor,
           boxShadow: isSelected
@@ -70,13 +70,13 @@ export default function PuntoDiScattoMarker({
           outlineOffset: "2px",
         }}
       >
-        <span className="text-white font-bold leading-none" style={{ fontSize: 13 }}>
+        <span className="text-white font-bold leading-none" style={{ fontSize: 11 }}>
           {number}
         </span>
         {fotoCount > 0 && (
           <span
-            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
-            style={{ background: "#6366f1", fontSize: 9 }}
+            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full text-white flex items-center justify-center font-bold"
+            style={{ background: "#6366f1", fontSize: 8 }}
           >
             {fotoCount > 9 ? "9+" : fotoCount}
           </span>
