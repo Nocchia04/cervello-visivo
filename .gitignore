@@ -50,3 +50,6 @@ Cervello-visivo-server.pem
 
 # Tutorial video sorgente — versione compressa in apps/mobile/assets/videos/
 apps/mobile/src/tutorial_theta_2.mp4
+
+# Cartella di lavoro upload (file grandi, non versionati)
+upload/
