@@ -16,7 +16,7 @@ import dynamic from "next/dynamic";
 import PiantinaSidebarWidget from "@/components/piantina/PiantinaSidebarWidget";
 import DateDropdown from "@/components/piantina/DateDropdown";
 import { GET_PIANTINA, GET_CANTIERE } from "@/graphql/queries";
-import { UPLOAD_FOTO360, ELIMINA_FOTO360 } from "@/graphql/mutations";
+import { UPLOAD_FOTO360, ELIMINA_FOTO360, AGGIORNA_DATA_FOTO360 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
 import { safeDate } from "@/lib/dateUtils";
 
@@ -244,6 +244,16 @@ export default function PiantinaPage() {
       eliminaFoto({ variables: { id: fotoId } });
     },
     [eliminaFoto]
+  );
+
+  const [aggiornaDataFoto] = useMutation(AGGIORNA_DATA_FOTO360, {
+    onCompleted: () => refetch(),
+  });
+  const handleEditFotoDate = useCallback(
+    (fotoId: string, isoDate: string) => {
+      aggiornaDataFoto({ variables: { id: fotoId, data: isoDate } });
+    },
+    [aggiornaDataFoto]
   );
 
   const piantina = data?.piantina;
@@ -479,6 +489,7 @@ export default function PiantinaPage() {
                   open={dateDropdownOpenLeft}
                   onToggle={() => setDateDropdownOpenLeft(!dateDropdownOpenLeft)}
                   onDelete={handleDeleteFoto}
+                  onEditDate={handleEditFotoDate}
                   openUpward
                   darkTheme
                 />
@@ -549,6 +560,7 @@ export default function PiantinaPage() {
                   open={compareDateDropdownOpen}
                   onToggle={() => setCompareDateDropdownOpen(!compareDateDropdownOpen)}
                   onDelete={handleDeleteFoto}
+                  onEditDate={handleEditFotoDate}
                   openUpward
                   darkTheme
                 />

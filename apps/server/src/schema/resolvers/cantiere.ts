@@ -91,6 +91,24 @@ export const cantiereResolvers = {
       });
     },
 
+    aggiornaDataCantiere: async (
+      _parent: unknown,
+      args: { id: string; data: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAdmin(ctx);
+      const d = new Date(args.data);
+      if (isNaN(d.getTime())) {
+        throw new GraphQLError("Data non valida", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      return ctx.prisma.cantiere.update({
+        where: { id: args.id },
+        data: { createdAt: d },
+      });
+    },
+
     archiviaCantiere: async (
       _parent: unknown,
       args: { id: string },

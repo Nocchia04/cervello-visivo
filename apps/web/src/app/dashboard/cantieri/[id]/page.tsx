@@ -18,6 +18,8 @@ import {
 import { GET_CANTIERE } from "@/graphql/queries";
 import {
   AGGIORNA_CANTIERE,
+  AGGIORNA_DATA_CANTIERE,
+  AGGIORNA_DATA_PIANTINA,
   ARCHIVIA_CANTIERE,
   RIATTIVA_CANTIERE,
   CARICA_PIANTINA,
@@ -238,10 +240,13 @@ export default function CantiereDettaglioPage() {
   const [editing, setEditing] = useState(false);
   const [editNome, setEditNome] = useState("");
   const [editIndirizzo, setEditIndirizzo] = useState("");
+  const [editData, setEditData] = useState("");
   const [showCaricaModal, setShowCaricaModal] = useState(false);
   const [showCondividiModal, setShowCondividiModal] = useState(false);
   const [renamingPiantinaId, setRenamingPiantinaId] = useState<string | null>(null);
   const [renamingPiantinaValue, setRenamingPiantinaValue] = useState("");
+  const [editPiantinaDateId, setEditPiantinaDateId] = useState<string | null>(null);
+  const [editPiantinaDateValue, setEditPiantinaDateValue] = useState("");
 
   const { data, loading, refetch } = useQuery(GET_CANTIERE, {
     variables: { id: cantiereId },
@@ -258,6 +263,12 @@ export default function CantiereDettaglioPage() {
   });
   const [rinominaPiantina] = useMutation(RINOMINA_PIANTINA, {
     onCompleted: () => { refetch(); setRenamingPiantinaId(null); },
+  });
+  const [aggiornaDataCantiere] = useMutation(AGGIORNA_DATA_CANTIERE, {
+    onCompleted: () => refetch(),
+  });
+  const [aggiornaDataPiantina] = useMutation(AGGIORNA_DATA_PIANTINA, {
+    onCompleted: () => { refetch(); setEditPiantinaDateId(null); },
   });
 
   const cantiere = data?.cantiere;
@@ -281,9 +292,16 @@ export default function CantiereDettaglioPage() {
     );
   }
 
+  const toDateInput = (iso: string | undefined): string => {
+    const d = iso ? safeDate(iso) : new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+
   const startEditing = () => {
     setEditNome(cantiere.nome);
     setEditIndirizzo(cantiere.indirizzo);
+    setEditData(toDateInput(cantiere.createdAt));
     setEditing(true);
   };
 
@@ -291,6 +309,13 @@ export default function CantiereDettaglioPage() {
     aggiorna({
       variables: { id: cantiereId, input: { nome: editNome, indirizzo: editIndirizzo } },
     });
+    // Aggiorna anche la data del cantiere se impostata/valida.
+    if (editData) {
+      const iso = new Date(editData).toISOString();
+      if (!isNaN(new Date(editData).getTime())) {
+        aggiornaDataCantiere({ variables: { id: cantiereId, data: iso } });
+      }
+    }
   };
 
   return (
@@ -322,6 +347,17 @@ export default function CantiereDettaglioPage() {
               className="input-field"
               placeholder="Indirizzo"
             />
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+                Data cantiere
+              </label>
+              <input
+                type="date"
+                value={editData}
+                onChange={(e) => setEditData(e.target.value)}
+                className="input-field"
+              />
+            </div>
             <div className="flex gap-2">
               <button onClick={saveEdit} className="btn-primary">
                 Salva
@@ -433,6 +469,7 @@ export default function CantiereDettaglioPage() {
                 fileUrl: string;
                 larghezza: number;
                 altezza: number;
+                createdAt?: string;
               }) => (
                 <Link
                   key={piantina.id}
@@ -511,6 +548,53 @@ export default function CantiereDettaglioPage() {
                         Livello {piantina.livello} &middot; {piantina.larghezza}
                         &times;{piantina.altezza}px
                       </p>
+                      {/* Data piantina (createdAt) modificabile */}
+                      <div className="flex items-center gap-1 mt-1" style={{ fontSize: 11 }} onClick={(e) => e.preventDefault()}>
+                        {editPiantinaDateId === piantina.id ? (
+                          <>
+                            <input
+                              type="date"
+                              autoFocus
+                              value={editPiantinaDateValue}
+                              onChange={(e) => setEditPiantinaDateValue(e.target.value)}
+                              className="input-field"
+                              style={{ fontSize: 11, padding: "2px 6px", height: 26 }}
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                if (editPiantinaDateValue && !isNaN(new Date(editPiantinaDateValue).getTime())) {
+                                  aggiornaDataPiantina({ variables: { id: piantina.id, data: new Date(editPiantinaDateValue).toISOString() } });
+                                }
+                              }}
+                              className="btn-ghost p-1"
+                              title="Salva data"
+                            >
+                              <Pencil className="w-3 h-3" style={{ color: "var(--accent)" }} />
+                            </button>
+                            <button onClick={(e) => { e.preventDefault(); setEditPiantinaDateId(null); }} className="btn-ghost p-1">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ color: "var(--text-muted)" }}>
+                              Data: {piantina.createdAt ? safeDate(piantina.createdAt).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setEditPiantinaDateId(piantina.id);
+                                setEditPiantinaDateValue(toDateInput(piantina.createdAt));
+                              }}
+                              className="btn-ghost p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Modifica data piantina"
+                            >
+                              <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </Link>

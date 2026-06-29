@@ -47,6 +47,7 @@ export const GET_CANTIERE = gql`
         fileUrl
         larghezza
         altezza
+        createdAt
       }
     }
   }
@@ -67,6 +68,7 @@ export const GET_PIANTINA = gql`
         nome
         x
         y
+        createdAt
         foto360 {
           id
           url

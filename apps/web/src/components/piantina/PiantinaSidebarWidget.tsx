@@ -23,6 +23,8 @@ import {
   ELIMINA_FOTO360,
   AGGIUNGI_PUNTO_DI_SCATTO,
   SPOSTA_PUNTO_DI_SCATTO,
+  AGGIORNA_DATA_FOTO360,
+  AGGIORNA_DATA_PUNTO_DI_SCATTO,
 } from "@/graphql/mutations";
 import { safeDate } from "@/lib/dateUtils";
 import { useIsReadOnly } from "@/lib/readOnly";
@@ -39,6 +41,7 @@ interface Punto {
   nome: string;
   x: number;
   y: number;
+  createdAt?: string;
   foto360: Foto[];
 }
 
@@ -105,6 +108,8 @@ export default function PiantinaSidebarWidget({
   const [dateOpen, setDateOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [editingPuntoDate, setEditingPuntoDate] = useState(false);
+  const [puntoDateValue, setPuntoDateValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [pendingCoords, setPendingCoords] = useState<{ x: number; y: number } | null>(null);
   const [nuovoPuntoNome, setNuovoPuntoNome] = useState("");
@@ -273,6 +278,17 @@ export default function PiantinaSidebarWidget({
   const handleDeleteFoto = useCallback((fotoId: string) => {
     eliminaFoto({ variables: { id: fotoId } });
   }, [eliminaFoto]);
+
+  const [aggiornaDataFoto] = useMutation(AGGIORNA_DATA_FOTO360, {
+    onCompleted: () => refetch(),
+  });
+  const handleEditFotoDate = useCallback((fotoId: string, isoDate: string) => {
+    aggiornaDataFoto({ variables: { id: fotoId, data: isoDate } });
+  }, [aggiornaDataFoto]);
+
+  const [aggiornaDataPunto] = useMutation(AGGIORNA_DATA_PUNTO_DI_SCATTO, {
+    onCompleted: () => { refetch(); setEditingPuntoDate(false); },
+  });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handlePuntoClick = useCallback((puntoId: string) => {
@@ -580,6 +596,63 @@ export default function PiantinaSidebarWidget({
                   )}
                 </div>
 
+                {/* Data del punto (createdAt) — modificabile dagli editor */}
+                {canEdit && (
+                  <div className="flex items-center gap-1 mb-2" style={{ fontSize: 11 }}>
+                    {editingPuntoDate ? (
+                      <>
+                        <input
+                          type="date"
+                          autoFocus
+                          value={puntoDateValue}
+                          onChange={(e) => setPuntoDateValue(e.target.value)}
+                          style={{ fontSize: 11, border: "1px solid var(--border)", borderRadius: 4, padding: "2px 6px" }}
+                        />
+                        <button
+                          onClick={() => {
+                            if (puntoDateValue) {
+                              const iso = new Date(puntoDateValue).toISOString();
+                              if (!isNaN(new Date(puntoDateValue).getTime()))
+                                aggiornaDataPunto({ variables: { id: selectedPunto.id, data: iso } });
+                            }
+                          }}
+                          title="Salva data punto"
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                        >
+                          <Check className="w-3 h-3" style={{ color: "#22c55e" }} />
+                        </button>
+                        <button
+                          onClick={() => setEditingPuntoDate(false)}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                        >
+                          <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ color: "var(--text-muted)" }}>
+                          Data punto:{" "}
+                          {selectedPunto.createdAt
+                            ? safeDate(selectedPunto.createdAt).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })
+                            : "—"}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setEditingPuntoDate(true);
+                            const d = selectedPunto.createdAt ? safeDate(selectedPunto.createdAt) : new Date();
+                            const p = (n: number) => String(n).padStart(2, "0");
+                            setPuntoDateValue(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
+                          }}
+                          title="Modifica data punto"
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", opacity: 0.5 }}
+                        >
+                          <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {sortedFoto.length > 0 && (
                   <DateDropdown
                     fotos={sortedFoto}
@@ -588,6 +661,7 @@ export default function PiantinaSidebarWidget({
                     open={dateOpen}
                     onToggle={() => setDateOpen(!dateOpen)}
                     onDelete={canEdit ? handleDeleteFoto : undefined}
+                    onEditDate={canEdit ? handleEditFotoDate : undefined}
                     openUpward
                   />
                 )}

@@ -277,6 +277,42 @@ export const ELIMINA_FOTO360 = gql`
   }
 `;
 
+export const AGGIORNA_DATA_CANTIERE = gql`
+  mutation AggiornaDataCantiere($id: ID!, $data: String!) {
+    aggiornaDataCantiere(id: $id, data: $data) {
+      id
+      createdAt
+    }
+  }
+`;
+
+export const AGGIORNA_DATA_PIANTINA = gql`
+  mutation AggiornaDataPiantina($id: ID!, $data: String!) {
+    aggiornaDataPiantina(id: $id, data: $data) {
+      id
+      createdAt
+    }
+  }
+`;
+
+export const AGGIORNA_DATA_PUNTO_DI_SCATTO = gql`
+  mutation AggiornaDataPuntoDiScatto($id: ID!, $data: String!) {
+    aggiornaDataPuntoDiScatto(id: $id, data: $data) {
+      id
+      createdAt
+    }
+  }
+`;
+
+export const AGGIORNA_DATA_FOTO360 = gql`
+  mutation AggiornaDataFoto360($id: ID!, $data: String!) {
+    aggiornaDataFoto360(id: $id, data: $data) {
+      id
+      timestamp
+    }
+  }
+`;
+
 export const CREA_LINK_CONDIVISIONE = gql`
   mutation CreaLinkCondivisione($cantiereId: ID!, $durataGiorni: Int) {
     creaLinkCondivisione(cantiereId: $cantiereId, durataGiorni: $durataGiorni) {

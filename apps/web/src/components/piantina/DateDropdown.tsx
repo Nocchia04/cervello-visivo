@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChevronDown, Check, Trash2, X } from "lucide-react";
+import { ChevronDown, Check, Trash2, X, Pencil } from "lucide-react";
 import { safeDate } from "@/lib/dateUtils";
 
 interface Foto {
@@ -16,8 +16,17 @@ interface DateDropdownProps {
   open: boolean;
   onToggle: () => void;
   onDelete?: (fotoId: string) => void;
+  /** Se passato, mostra la matita per modificare la data (ISO) della foto. */
+  onEditDate?: (fotoId: string, isoDate: string) => void;
   openUpward?: boolean;
   darkTheme?: boolean;
+}
+
+/** Converte un timestamp ISO nel valore per <input type="datetime-local"> (ora locale). */
+function toLocalInputValue(ts: string): string {
+  const d = safeDate(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function DateDropdown({
@@ -27,10 +36,13 @@ export default function DateDropdown({
   open,
   onToggle,
   onDelete,
+  onEditDate,
   openUpward,
   darkTheme,
 }: DateDropdownProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const currentFoto = fotos[selectedIndex];
 
@@ -130,71 +142,124 @@ export default function DateDropdown({
                 color: "var(--text)",
               }}
             >
-              <button
-                onClick={() => {
-                  onSelect(idx);
-                  onToggle();
-                }}
-                style={{
-                  flex: 1,
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  color: "var(--text)",
-                  textAlign: "left",
-                  padding: 0,
-                }}
-              >
-                <span style={{ color: "var(--text-muted)", marginRight: 4, minWidth: 18, display: "inline-block" }}>
-                  #{idx + 1}
-                </span>
-                {safeDate(foto.timestamp).toLocaleDateString("it-IT", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })}
-                {" "}
-                <span style={{ color: "var(--text-muted)" }}>
-                  {safeDate(foto.timestamp).toLocaleTimeString("it-IT", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })}
-                </span>
-              </button>
-              {idx === selectedIndex && (
-                <Check className="w-3 h-3 flex-shrink-0" style={{ color: "#6366f1" }} />
-              )}
-              {onDelete && (
-                confirmDeleteId === foto.id ? (
-                  <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDelete(foto.id); setConfirmDeleteId(null); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                      title="Conferma"
-                    >
-                      <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                      title="Annulla"
-                    >
-                      <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                    </button>
-                  </div>
-                ) : (
+              {editId === foto.id ? (
+                <div style={{ display: "flex", gap: 4, flex: 1, alignItems: "center" }}>
+                  <input
+                    type="datetime-local"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      flex: 1,
+                      fontSize: 12,
+                      padding: "4px 6px",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      color: "var(--text)",
+                    }}
+                  />
                   <button
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(foto.id); }}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
-                    title="Elimina foto"
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (editValue && onEditDate) {
+                        const iso = new Date(editValue).toISOString();
+                        if (!isNaN(new Date(editValue).getTime())) onEditDate(foto.id, iso);
+                      }
+                      setEditId(null);
+                    }}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                    title="Salva data"
                   >
-                    <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
+                    <Check className="w-3 h-3" style={{ color: "#16a34a" }} />
                   </button>
-                )
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditId(null); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                    title="Annulla"
+                  >
+                    <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      onSelect(idx);
+                      onToggle();
+                    }}
+                    style={{
+                      flex: 1,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      color: "var(--text)",
+                      textAlign: "left",
+                      padding: 0,
+                    }}
+                  >
+                    <span style={{ color: "var(--text-muted)", marginRight: 4, minWidth: 18, display: "inline-block" }}>
+                      #{idx + 1}
+                    </span>
+                    {safeDate(foto.timestamp).toLocaleDateString("it-IT", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                    {" "}
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {safeDate(foto.timestamp).toLocaleTimeString("it-IT", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}
+                    </span>
+                  </button>
+                  {idx === selectedIndex && (
+                    <Check className="w-3 h-3 flex-shrink-0" style={{ color: "#6366f1" }} />
+                  )}
+                  {onEditDate && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); setEditId(foto.id); setEditValue(toLocalInputValue(foto.timestamp)); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
+                      title="Modifica data"
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
+                    >
+                      <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                    </button>
+                  )}
+                  {onDelete && (
+                    confirmDeleteId === foto.id ? (
+                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDelete(foto.id); setConfirmDeleteId(null); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                          title="Conferma"
+                        >
+                          <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+                          title="Annulla"
+                        >
+                          <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(foto.id); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
+                        title="Elimina foto"
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
+                      >
+                        <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
+                      </button>
+                    )
+                  )}
+                </>
               )}
             </div>
           ))}

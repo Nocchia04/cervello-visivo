@@ -115,6 +115,30 @@ export const foto360Resolvers = {
       });
     },
 
+    aggiornaDataFoto360: async (
+      _parent: unknown,
+      args: { id: string; data: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+      const d = new Date(args.data);
+      if (isNaN(d.getTime())) {
+        throw new GraphQLError("Data non valida", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const foto = await ctx.prisma.foto360.findUnique({ where: { id: args.id } });
+      if (!foto) {
+        throw new GraphQLError("Foto non trovata", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      return ctx.prisma.foto360.update({
+        where: { id: args.id },
+        data: { timestamp: d },
+      });
+    },
+
     eliminaFoto360: async (
       _parent: unknown,
       args: { id: string },

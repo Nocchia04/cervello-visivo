@@ -43,6 +43,7 @@ type CantiereUser {
 extend type Mutation {
   creaCantiere(input: CreateCantiereInput!): Cantiere!
   aggiornaCantiere(id: ID!, input: UpdateCantiereInput!): Cantiere!
+  aggiornaDataCantiere(id: ID!, data: String!): Cantiere!
   archiviaCantiere(id: ID!): Cantiere!
   riattivaCantiere(id: ID!): Cantiere!
   assegnaOperatoreCantiere(cantiereId: ID!, userId: ID!): CantiereUser!

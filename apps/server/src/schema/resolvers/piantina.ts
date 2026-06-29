@@ -216,6 +216,42 @@ export const piantinaResolvers = {
         data: { nome: args.nome.trim() },
       });
     },
+
+    aggiornaDataPiantina: async (
+      _parent: unknown,
+      args: { id: string; data: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+      const d = new Date(args.data);
+      if (isNaN(d.getTime())) {
+        throw new GraphQLError("Data non valida", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      return ctx.prisma.piantina.update({
+        where: { id: args.id },
+        data: { createdAt: d },
+      });
+    },
+
+    aggiornaDataPuntoDiScatto: async (
+      _parent: unknown,
+      args: { id: string; data: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+      const d = new Date(args.data);
+      if (isNaN(d.getTime())) {
+        throw new GraphQLError("Data non valida", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      return ctx.prisma.puntoDiScatto.update({
+        where: { id: args.id },
+        data: { createdAt: d },
+      });
+    },
   },
 
   Piantina: {

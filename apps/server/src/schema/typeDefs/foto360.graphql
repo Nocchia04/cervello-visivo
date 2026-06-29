@@ -25,5 +25,6 @@ extend type Mutation {
     metadata: JSON
     timestamp: String
   ): Foto360!
+  aggiornaDataFoto360(id: ID!, data: String!): Foto360!
   eliminaFoto360(id: ID!): Foto360!
 }
