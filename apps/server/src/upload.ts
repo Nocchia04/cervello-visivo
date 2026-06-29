@@ -2,9 +2,12 @@ import multer from "multer";
 import path from "path";
 import { randomUUID } from "crypto";
 
+/** Cartella su disco dei file serviti da `/uploads`. */
+export const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, path.resolve(__dirname, "../uploads"));
+    cb(null, UPLOADS_DIR);
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname);

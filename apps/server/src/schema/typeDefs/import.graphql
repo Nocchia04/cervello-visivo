@@ -1,0 +1,41 @@
+type ImportIssue {
+  severita: String!
+  categoria: String!
+  percorso: String!
+  messaggio: String!
+  azione: String!
+}
+
+type ImportProgress {
+  fase: String!
+  correnti: Int!
+  totali: Int!
+  messaggio: String!
+  avvisiCount: Int!
+  erroriCount: Int!
+  completato: Boolean!
+  errore: String
+  cantiereId: ID
+}
+
+type ImportResult {
+  stato: String!
+  cantiereId: ID
+  piantineCreate: Int!
+  puntiCreati: Int!
+  fotoCreate: Int!
+  issues: [ImportIssue!]!
+}
+
+extend type Mutation {
+  confermaImportHolobuilder(
+    jobId: ID!
+    nome: String!
+    indirizzo: String!
+    skipFotoSenzaData: Boolean
+  ): ImportResult!
+}
+
+extend type Subscription {
+  importProgress(jobId: ID!): ImportProgress!
+}

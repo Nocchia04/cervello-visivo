@@ -12,6 +12,7 @@ import { useServer } from "graphql-ws/lib/use/ws";
 import { typeDefs, resolvers } from "./schema/index.js";
 import { createContext, createWsContext, type GraphQLContext } from "./context.js";
 import { upload } from "./upload.js";
+import { importRouter } from "./importRoute.js";
 
 const PORT = parseInt(process.env.PORT || "4000", 10);
 
@@ -85,6 +86,9 @@ async function main() {
     const fileUrl = `/uploads/${req.file.filename}`;
     res.json({ url: fileUrl, filename: req.file.filename });
   });
+
+  // Import ZIP HoloBuilder (admin-only) — gestisce il proprio multer
+  app.use(importRouter);
 
   // Serve uploaded files
   app.use("/uploads", express.static("uploads"));
