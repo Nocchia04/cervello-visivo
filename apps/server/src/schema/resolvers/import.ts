@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import exifr from "exifr";
 import { GraphQLError } from "graphql";
 import type { GraphQLContext } from "../../context.js";
 import { requireAdmin } from "../../utils/access.js";
@@ -27,6 +28,25 @@ function copyToUploads(srcAbs: string): string {
   const name = `${randomUUID()}${ext}`;
   fs.copyFileSync(srcAbs, path.join(UPLOADS_DIR, name));
   return `${PUBLIC_BASE_URL}/uploads/${name}`;
+}
+
+/** Legge la data di scatto dagli EXIF (DateTimeOriginal), o null. */
+async function exifDate(absPath: string): Promise<Date | null> {
+  try {
+    const ex = await exifr.parse(absPath, ["DateTimeOriginal", "CreateDate"]);
+    const d = ex?.DateTimeOriginal ?? ex?.CreateDate;
+    return d instanceof Date && !isNaN(d.getTime()) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Data più vecchia (prima documentazione) tra quelle valide, o null. */
+function oldestDate(dates: (Date | null | undefined)[]): Date | null {
+  const ms = dates
+    .filter((d): d is Date => d instanceof Date && !isNaN(d.getTime()))
+    .map((d) => d.getTime());
+  return ms.length ? new Date(Math.min(...ms)) : null;
 }
 
 export const importResolvers = {
@@ -79,13 +99,48 @@ export const importResolvers = {
           },
         });
 
+      // Risolvi le date mancanti dagli EXIF: se il nome non ha la data, la
+      // leggiamo dallo scatto (DateTimeOriginal) invece di cadere su now().
+      for (const floor of structure.floors) {
+        for (const point of floor.points) {
+          for (const photo of point.photos) {
+            if (!photo.timestamp) {
+              photo.timestamp = await exifDate(path.join(tempDir, photo.rel));
+            }
+          }
+        }
+      }
+
+      // "Prima documentazione": createdAt di punto/piano/cantiere = foto più
+      // vecchia. Calcolato qui perché serve già alla create (createdAt non si
+      // bumpa come updatedAt).
+      const pointOldest = new Map<unknown, Date | null>();
+      const floorOldest = new Map<unknown, Date | null>();
+      const allDates: (Date | null)[] = [];
+      for (const floor of structure.floors) {
+        const fDates: (Date | null)[] = [];
+        for (const point of floor.points) {
+          const po = oldestDate(point.photos.map((p) => p.timestamp));
+          pointOldest.set(point, po);
+          fDates.push(po);
+        }
+        floorOldest.set(floor, oldestDate(fDates));
+        allDates.push(...fDates);
+      }
+      const cantiereOldest = oldestDate(allDates);
+
       const cantiere = await ctx.prisma.cantiere.create({
-        data: { nome: args.nome.trim(), indirizzo: args.indirizzo.trim() },
+        data: {
+          nome: args.nome.trim(),
+          indirizzo: args.indirizzo.trim(),
+          ...(cantiereOldest ? { createdAt: cantiereOldest } : {}),
+        },
       });
 
       try {
         for (const floor of structure.floors) {
           const planUrl = copyToUploads(path.join(tempDir, floor.floorPlanRel!));
+          const floorDate = floorOldest.get(floor);
           const piantina = await ctx.prisma.piantina.create({
             data: {
               cantiereId: cantiere.id,
@@ -94,6 +149,7 @@ export const importResolvers = {
               fileUrl: planUrl,
               larghezza: 1000, // placeholder: i marker usano coordinate % (0–100)
               altezza: 1000,
+              ...(floorDate ? { createdAt: floorDate } : {}),
             },
           });
           piantineCreate++;
@@ -103,14 +159,24 @@ export const importResolvers = {
           for (let pi = 0; pi < floor.points.length; pi++) {
             const point = floor.points[pi];
             const { x, y } = gridPosition(pi, totPunti);
+            const ptDate = pointOldest.get(point) ?? null;
             const punto = await ctx.prisma.puntoDiScatto.create({
-              data: { piantinaId: piantina.id, nome: point.name, x, y },
+              data: {
+                piantinaId: piantina.id,
+                nome: point.name,
+                x,
+                y,
+                ...(ptDate ? { createdAt: ptDate } : {}),
+              },
             });
             puntiCreati++;
 
             for (const photo of point.photos) {
-              if (!photo.timestamp && args.skipFotoSenzaData) {
-                continue; // già segnalata come avviso dataMancante
+              // Data foto: dal nome o EXIF; se proprio assente, la foto più
+              // vecchia del punto (così non finisce su "oggi").
+              const fotoTs = photo.timestamp ?? ptDate;
+              if (!fotoTs && args.skipFotoSenzaData) {
+                continue; // nessuna data ricavabile e l'utente ha scelto di saltare
               }
               try {
                 const url = copyToUploads(path.join(tempDir, photo.rel));
@@ -123,7 +189,7 @@ export const importResolvers = {
                       source: "holobuilder-import",
                       originalName: photo.originalName,
                     },
-                    ...(photo.timestamp ? { timestamp: photo.timestamp } : {}),
+                    ...(fotoTs ? { timestamp: fotoTs } : {}),
                   },
                 });
                 fotoCreate++;
