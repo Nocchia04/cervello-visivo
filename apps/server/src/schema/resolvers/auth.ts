@@ -67,7 +67,14 @@ export const authResolvers = {
 
     creaOperatore: async (
       _parent: unknown,
-      args: { email: string; password: string; nome: string; cognome: string },
+      args: {
+        email: string;
+        password: string;
+        nome: string;
+        cognome: string;
+        emailPersonale?: string | null;
+        telefono?: string | null;
+      },
       ctx: GraphQLContext
     ) => {
       if (!ctx.user || ctx.user.role !== "ADMIN") {
@@ -90,6 +97,8 @@ export const authResolvers = {
           password: hashed,
           nome: args.nome,
           cognome: args.cognome,
+          emailPersonale: args.emailPersonale?.trim() || null,
+          telefono: args.telefono?.trim() || null,
           role: "CAPO_CANTIERE",
         },
       });
@@ -99,6 +108,35 @@ export const authResolvers = {
         role: newUser.role,
       });
       return { token, user: newUser };
+    },
+
+    /**
+     * Aggiorna i contatti di un operatore (email personale per notifiche push,
+     * telefono). Solo admin. Passa null/"" per svuotare un campo.
+     */
+    aggiornaOperatore: async (
+      _parent: unknown,
+      args: { id: string; emailPersonale?: string | null; telefono?: string | null },
+      ctx: GraphQLContext
+    ) => {
+      if (!ctx.user || ctx.user.role !== "ADMIN") {
+        throw new GraphQLError("Non autorizzato", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+      const user = await ctx.prisma.user.findUnique({ where: { id: args.id } });
+      if (!user) {
+        throw new GraphQLError("Utente non trovato", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      return ctx.prisma.user.update({
+        where: { id: args.id },
+        data: {
+          emailPersonale: args.emailPersonale?.trim() || null,
+          telefono: args.telefono?.trim() || null,
+        },
+      });
     },
 
     /**

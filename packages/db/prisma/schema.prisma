@@ -22,14 +22,16 @@ enum StatoCantiere {
 // ─── Models ──────────────────────────────────────────────
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  nome      String
-  cognome   String
-  role      UserRole @default(CAPO_CANTIERE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  email          String   @unique
+  password       String
+  nome           String
+  cognome        String
+  emailPersonale String?  // email di contatto per notifiche push (distinta dal login)
+  telefono       String?
+  role           UserRole @default(CAPO_CANTIERE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   foto360       Foto360[]
   annotazioni   Annotazione[]

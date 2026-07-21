@@ -228,16 +228,37 @@ export const CREA_OPERATORE = gql`
     $password: String!
     $nome: String!
     $cognome: String!
+    $emailPersonale: String
+    $telefono: String
   ) {
-    creaOperatore(email: $email, password: $password, nome: $nome, cognome: $cognome) {
+    creaOperatore(
+      email: $email
+      password: $password
+      nome: $nome
+      cognome: $cognome
+      emailPersonale: $emailPersonale
+      telefono: $telefono
+    ) {
       token
       user {
         id
         email
         nome
         cognome
+        emailPersonale
+        telefono
         role
       }
+    }
+  }
+`;
+
+export const AGGIORNA_OPERATORE = gql`
+  mutation AggiornaOperatore($id: ID!, $emailPersonale: String, $telefono: String) {
+    aggiornaOperatore(id: $id, emailPersonale: $emailPersonale, telefono: $telefono) {
+      id
+      emailPersonale
+      telefono
     }
   }
 `;

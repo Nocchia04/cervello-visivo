@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import Link from "next/link";
-import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound, FileArchive } from "lucide-react";
+import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound, FileArchive, Pencil } from "lucide-react";
 import { GET_UTENTI, GET_CANTIERI } from "@/graphql/queries";
-import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE, CAMBIA_PASSWORD_OPERATORE } from "@/graphql/mutations";
+import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE, CAMBIA_PASSWORD_OPERATORE, AGGIORNA_OPERATORE } from "@/graphql/mutations";
 
 interface CantiereAssegnato {
   id: string;
@@ -17,6 +17,8 @@ interface User {
   email: string;
   nome: string;
   cognome: string;
+  emailPersonale?: string | null;
+  telefono?: string | null;
   role: string;
   createdAt: string;
   cantieri: CantiereAssegnato[];
@@ -32,7 +34,7 @@ interface Cantiere {
 // ── Modal creazione operatore ─────────────────────────────────────────────────
 
 function CreaOperatoreModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [form, setForm] = useState({ email: "", password: "", nome: "", cognome: "" });
+  const [form, setForm] = useState({ email: "", password: "", nome: "", cognome: "", emailPersonale: "", telefono: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,9 +70,23 @@ function CreaOperatoreModal({ onClose, onSuccess }: { onClose: () => void; onSuc
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-2">Email</label>
+            <label className="block text-sm font-medium mb-2">Email (login)</label>
             <input type="email" className="input-field" value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-2">Email personale</label>
+              <input type="email" className="input-field" value={form.emailPersonale}
+                onChange={(e) => setForm({ ...form, emailPersonale: e.target.value })}
+                placeholder="notifiche push" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Telefono</label>
+              <input type="tel" className="input-field" value={form.telefono}
+                onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+                placeholder="+39 ..." />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-2">Password temporanea</label>
@@ -249,6 +265,77 @@ function CambiaPasswordModal({
   );
 }
 
+// ── Modal modifica contatti operatore ─────────────────────────────────────────
+
+function ModificaContattiModal({
+  user,
+  onClose,
+  onSuccess,
+}: {
+  user: { id: string; nome: string; cognome: string; email: string; emailPersonale?: string | null; telefono?: string | null };
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [emailPersonale, setEmailPersonale] = useState(user.emailPersonale ?? "");
+  const [telefono, setTelefono] = useState(user.telefono ?? "");
+  const [error, setError] = useState("");
+
+  const [aggiorna, { loading }] = useMutation(AGGIORNA_OPERATORE, {
+    onCompleted: () => { onSuccess(); onClose(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    aggiorna({ variables: { id: user.id, emailPersonale, telefono } });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="card w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "var(--accent)", color: "#fff" }}>
+              <Pencil className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold truncate">Modifica contatti</h2>
+              <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>
+                {user.nome} {user.cognome} · {user.email}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="btn-ghost p-1.5 -mt-1 -mr-1"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Email personale</label>
+            <input type="email" className="input-field" value={emailPersonale}
+              onChange={(e) => setEmailPersonale(e.target.value)} placeholder="per le notifiche push" autoFocus />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Telefono</label>
+            <input type="tel" className="input-field" value={telefono}
+              onChange={(e) => setTelefono(e.target.value)} placeholder="+39 ..." />
+          </div>
+          {error && (
+            <p className="text-sm px-3 py-2 rounded-lg" style={{ color: "var(--danger)", background: "rgba(239,68,68,0.1)" }}>
+              {error}
+            </p>
+          )}
+          <div className="flex gap-3 mt-1">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1" disabled={loading}>Annulla</button>
+            <button type="submit" className="btn-primary flex-1" disabled={loading}>
+              {loading ? "Salvo..." : "Salva contatti"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Riga cantiere nel pannello assegnazioni ───────────────────────────────────
 
 function CantiereRow({
@@ -333,6 +420,7 @@ export default function AdminPage() {
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
   const [passwordUserId, setPasswordUserId] = useState<string | null>(null);
+  const [contattiUserId, setContattiUserId] = useState<string | null>(null);
 
   const { data: utentiData, loading: utentiLoading, refetch: refetchUtenti } = useQuery(GET_UTENTI);
   const { data: cantieriData } = useQuery(GET_CANTIERI, { variables: { includiArchiviati: false } });
@@ -520,6 +608,13 @@ export default function AdminPage() {
                 <div>
                   <p className="font-semibold">{selectedUser.nome} {selectedUser.cognome}</p>
                   <p className="text-xs" style={{ color: "var(--text-muted)" }}>{selectedUser.email}</p>
+                  {(selectedUser.emailPersonale || selectedUser.telefono) && (
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      {selectedUser.emailPersonale && <>✉ {selectedUser.emailPersonale}</>}
+                      {selectedUser.emailPersonale && selectedUser.telefono && " · "}
+                      {selectedUser.telefono && <>☎ {selectedUser.telefono}</>}
+                    </p>
+                  )}
                 </div>
                 <div className="ml-auto flex items-center gap-3">
                   <div className="text-right">
@@ -549,6 +644,13 @@ export default function AdminPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setContattiUserId(selectedUser.id)}
+                        className="btn-ghost p-2"
+                        title="Modifica contatti operatore"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => setPasswordUserId(selectedUser.id)}
                         className="btn-ghost p-2"
@@ -619,6 +721,18 @@ export default function AdminPage() {
           <CambiaPasswordModal
             user={target}
             onClose={() => setPasswordUserId(null)}
+            onSuccess={() => refetchUtenti()}
+          />
+        );
+      })()}
+
+      {contattiUserId && (() => {
+        const target = operatori.find((u) => u.id === contattiUserId);
+        if (!target) return null;
+        return (
+          <ModificaContattiModal
+            user={target}
+            onClose={() => setContattiUserId(null)}
             onSuccess={() => refetchUtenti()}
           />
         );

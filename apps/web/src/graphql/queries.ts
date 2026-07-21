@@ -150,6 +150,8 @@ export const GET_UTENTI = gql`
       email
       nome
       cognome
+      emailPersonale
+      telefono
       role
       createdAt
       cantieri {

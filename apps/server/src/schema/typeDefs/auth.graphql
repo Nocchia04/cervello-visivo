@@ -3,6 +3,8 @@ type User {
   email: String!
   nome: String!
   cognome: String!
+  emailPersonale: String
+  telefono: String
   role: UserRole!
   createdAt: String!
   updatedAt: String!
@@ -33,7 +35,19 @@ type Mutation {
     cognome: String!
     role: UserRole
   ): AuthPayload!
-  creaOperatore(email: String!, password: String!, nome: String!, cognome: String!): AuthPayload!
+  creaOperatore(
+    email: String!
+    password: String!
+    nome: String!
+    cognome: String!
+    emailPersonale: String
+    telefono: String
+  ): AuthPayload!
+  aggiornaOperatore(
+    id: ID!
+    emailPersonale: String
+    telefono: String
+  ): User!
   eliminaOperatore(id: ID!): User!
   """
   Reimposta la password di un operatore (CAPO_CANTIERE).
