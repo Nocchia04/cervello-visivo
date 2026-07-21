@@ -17,6 +17,7 @@ type PuntoDiScatto {
   nome: String!
   x: Float!
   y: Float!
+  dimensione: String!
   foto360: [Foto360!]!
   createdAt: String!
 }
@@ -41,7 +42,9 @@ extend type Mutation {
     nome: String!
     x: Float!
     y: Float!
+    dimensione: String
   ): PuntoDiScatto!
+  aggiornaDimensionePuntoDiScatto(id: ID!, dimensione: String!): PuntoDiScatto!
   spostaPuntoDiScatto(
     id: ID!
     x: Float!

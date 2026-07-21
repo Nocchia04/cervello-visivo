@@ -113,17 +113,29 @@ export const AGGIUNGI_PUNTO_DI_SCATTO = gql`
     $nome: String!
     $x: Float!
     $y: Float!
+    $dimensione: String
   ) {
     aggiungiPuntoDiScatto(
       piantinaId: $piantinaId
       nome: $nome
       x: $x
       y: $y
+      dimensione: $dimensione
     ) {
       id
       nome
       x
       y
+      dimensione
+    }
+  }
+`;
+
+export const AGGIORNA_DIMENSIONE_PUNTO = gql`
+  mutation AggiornaDimensionePunto($id: ID!, $dimensione: String!) {
+    aggiornaDimensionePuntoDiScatto(id: $id, dimensione: $dimensione) {
+      id
+      dimensione
     }
   }
 `;

@@ -26,6 +26,7 @@ import {
   SPOSTA_PUNTO_DI_SCATTO,
   AGGIORNA_DATA_FOTO360,
   AGGIORNA_DATA_PUNTO_DI_SCATTO,
+  AGGIORNA_DIMENSIONE_PUNTO,
 } from "@/graphql/mutations";
 import { safeDate } from "@/lib/dateUtils";
 import { useIsReadOnly } from "@/lib/readOnly";
@@ -42,8 +43,53 @@ interface Punto {
   nome: string;
   x: number;
   y: number;
+  dimensione?: string;
   createdAt?: string;
   foto360: Foto[];
+}
+
+const DIMENSIONI_PUNTO: { key: string; label: string }[] = [
+  { key: "PICCOLO", label: "Piccolo" },
+  { key: "MEDIO", label: "Medio" },
+  { key: "GRANDE", label: "Grande" },
+  { key: "XL", label: "XL" },
+];
+
+/** Selettore segmentato per la dimensione del marker. */
+function DimensioneSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      {DIMENSIONI_PUNTO.map((d) => {
+        const active = (value || "MEDIO") === d.key;
+        return (
+          <button
+            key={d.key}
+            type="button"
+            onClick={() => onChange(d.key)}
+            style={{
+              flex: 1,
+              fontSize: 11,
+              fontWeight: 600,
+              padding: "5px 4px",
+              borderRadius: 8,
+              border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+              background: active ? "var(--accent)" : "var(--surface)",
+              color: active ? "#fff" : "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            {d.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function sortFotoDesc(fotos: Foto[]): Foto[] {
@@ -115,6 +161,7 @@ export default function PiantinaSidebarWidget({
   const [confirmDeleteFotoId, setConfirmDeleteFotoId] = useState<string | null>(null);
   const [pendingCoords, setPendingCoords] = useState<{ x: number; y: number } | null>(null);
   const [nuovoPuntoNome, setNuovoPuntoNome] = useState("");
+  const [nuovoPuntoDimensione, setNuovoPuntoDimensione] = useState("MEDIO");
 
   // ── Resize state (with localStorage hydration) ────────────────────────────
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W);
@@ -270,8 +317,12 @@ export default function PiantinaSidebarWidget({
       refetch();
       setPendingCoords(null);
       setNuovoPuntoNome("");
+      setNuovoPuntoDimensione("MEDIO");
       updateParams({ addP: null });
     },
+  });
+  const [aggiornaDimensione] = useMutation(AGGIORNA_DIMENSIONE_PUNTO, {
+    onCompleted: () => refetch(),
   });
   const [spostaPunto] = useMutation(SPOSTA_PUNTO_DI_SCATTO, {
     onCompleted: () => refetch(),
@@ -336,6 +387,7 @@ export default function PiantinaSidebarWidget({
         nome: nuovoPuntoNome.trim(),
         x: pendingCoords.x,
         y: pendingCoords.y,
+        dimensione: nuovoPuntoDimensione,
       },
     });
   };
@@ -637,6 +689,21 @@ export default function PiantinaSidebarWidget({
                   </div>
                 )}
 
+                {/* Dimensione del marker del punto */}
+                {canEdit && (
+                  <div className="mb-2">
+                    <div className="section-label" style={{ marginBottom: 4 }}>
+                      Dimensione marker
+                    </div>
+                    <DimensioneSelector
+                      value={selectedPunto.dimensione ?? "MEDIO"}
+                      onChange={(v) =>
+                        aggiornaDimensione({ variables: { id: selectedPunto.id, dimensione: v } })
+                      }
+                    />
+                  </div>
+                )}
+
                 {sortedFoto.length > 0 && (
                   <DateDropdown
                     fotos={sortedFoto}
@@ -735,6 +802,12 @@ export default function PiantinaSidebarWidget({
                 }
               }}
             />
+            <label className="section-label" style={{ display: "block", marginBottom: 6 }}>
+              Dimensione marker
+            </label>
+            <div className="mb-4">
+              <DimensioneSelector value={nuovoPuntoDimensione} onChange={setNuovoPuntoDimensione} />
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => {

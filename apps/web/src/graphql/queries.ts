@@ -68,6 +68,7 @@ export const GET_PIANTINA = gql`
         nome
         x
         y
+        dimensione
         createdAt
         foto360 {
           id

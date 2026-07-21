@@ -10,6 +10,13 @@ function requireAuth(ctx: GraphQLContext) {
   return ctx.user;
 }
 
+const DIMENSIONI_VALIDE = new Set(["PICCOLO", "MEDIO", "GRANDE", "XL"]);
+/** Normalizza la dimensione a un valore valido, default MEDIO. */
+function normalizzaDimensione(d: string): string {
+  const up = (d || "").toUpperCase();
+  return DIMENSIONI_VALIDE.has(up) ? up : "MEDIO";
+}
+
 export const piantinaResolvers = {
   Query: {
     piantine: async (
@@ -107,7 +114,13 @@ export const piantinaResolvers = {
 
     aggiungiPuntoDiScatto: async (
       _parent: unknown,
-      args: { piantinaId: string; nome: string; x: number; y: number },
+      args: {
+        piantinaId: string;
+        nome: string;
+        x: number;
+        y: number;
+        dimensione?: string | null;
+      },
       ctx: GraphQLContext
     ) => {
       requireAuth(ctx);
@@ -127,7 +140,28 @@ export const piantinaResolvers = {
           nome: args.nome,
           x: args.x,
           y: args.y,
+          ...(args.dimensione ? { dimensione: normalizzaDimensione(args.dimensione) } : {}),
         },
+      });
+    },
+
+    aggiornaDimensionePuntoDiScatto: async (
+      _parent: unknown,
+      args: { id: string; dimensione: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+      const punto = await ctx.prisma.puntoDiScatto.findUnique({
+        where: { id: args.id },
+      });
+      if (!punto) {
+        throw new GraphQLError("Punto di scatto non trovato", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      return ctx.prisma.puntoDiScatto.update({
+        where: { id: args.id },
+        data: { dimensione: normalizzaDimensione(args.dimensione) },
       });
     },
 

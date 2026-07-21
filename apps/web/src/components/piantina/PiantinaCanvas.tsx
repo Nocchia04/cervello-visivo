@@ -14,6 +14,7 @@ interface Punto {
   nome: string;
   x: number;
   y: number;
+  dimensione?: string;
   foto360: Foto[];
 }
 
@@ -251,6 +252,7 @@ export default function PiantinaCanvas({
                 y={live?.y ?? punto.y}
                 number={index + 1}
                 fotoCount={punto.foto360.length}
+                dimensione={punto.dimensione}
                 isSelected={selectedPuntoId === punto.id}
                 editMode={isEditMode}
                 isDragging={draggingPuntoId === punto.id}

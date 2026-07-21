@@ -92,6 +92,7 @@ model PuntoDiScatto {
   nome       String
   x          Float
   y          Float
+  dimensione String   @default("MEDIO") // PICCOLO | MEDIO | GRANDE | XL — dimensione del marker
   createdAt  DateTime @default(now())
 
   piantina Piantina  @relation(fields: [piantinaId], references: [id], onDelete: Cascade)
