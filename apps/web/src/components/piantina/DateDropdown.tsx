@@ -40,7 +40,6 @@ export default function DateDropdown({
   openUpward,
   darkTheme,
 }: DateDropdownProps) {
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -220,7 +219,7 @@ export default function DateDropdown({
                   )}
                   {onEditDate && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); setEditId(foto.id); setEditValue(toLocalInputValue(foto.timestamp)); }}
+                      onClick={(e) => { e.stopPropagation(); setEditId(foto.id); setEditValue(toLocalInputValue(foto.timestamp)); }}
                       style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
                       title="Modifica data"
                       onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
@@ -230,34 +229,15 @@ export default function DateDropdown({
                     </button>
                   )}
                   {onDelete && (
-                    confirmDeleteId === foto.id ? (
-                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onDelete(foto.id); setConfirmDeleteId(null); }}
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                          title="Conferma"
-                        >
-                          <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
-                          title="Annulla"
-                        >
-                          <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(foto.id); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
-                        title="Elimina foto"
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
-                      >
-                        <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
-                      </button>
-                    )
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDelete(foto.id); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0, opacity: 0.4 }}
+                      title="Elimina foto"
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; }}
+                    >
+                      <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
+                    </button>
                   )}
                 </>
               )}

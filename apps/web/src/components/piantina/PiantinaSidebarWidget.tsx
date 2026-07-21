@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import PiantinaCanvas from "./PiantinaCanvas";
 import DateDropdown from "./DateDropdown";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { GET_PIANTINA, ME } from "@/graphql/queries";
 import {
   ELIMINA_PUNTO_DI_SCATTO,
@@ -111,6 +112,7 @@ export default function PiantinaSidebarWidget({
   const [editingPuntoDate, setEditingPuntoDate] = useState(false);
   const [puntoDateValue, setPuntoDateValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteFotoId, setConfirmDeleteFotoId] = useState<string | null>(null);
   const [pendingCoords, setPendingCoords] = useState<{ x: number; y: number } | null>(null);
   const [nuovoPuntoNome, setNuovoPuntoNome] = useState("");
 
@@ -276,8 +278,8 @@ export default function PiantinaSidebarWidget({
   });
 
   const handleDeleteFoto = useCallback((fotoId: string) => {
-    eliminaFoto({ variables: { id: fotoId } });
-  }, [eliminaFoto]);
+    setConfirmDeleteFotoId(fotoId); // apre il popup di conferma
+  }, []);
 
   const [aggiornaDataFoto] = useMutation(AGGIORNA_DATA_FOTO360, {
     onCompleted: () => refetch(),
@@ -565,31 +567,13 @@ export default function PiantinaSidebarWidget({
                           >
                             <Pencil className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
                           </button>
-                          {confirmDeleteId === selectedPunto.id ? (
-                            <>
-                              <button
-                                onClick={() => eliminaPuntoMutation({ variables: { id: selectedPunto.id } })}
-                                title="Conferma elimina"
-                                style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
-                              >
-                                <Check className="w-3 h-3" style={{ color: "#ef4444" }} />
-                              </button>
-                              <button
-                                onClick={() => setConfirmDeleteId(null)}
-                                style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
-                              >
-                                <X className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              onClick={() => setConfirmDeleteId(selectedPunto.id)}
-                              title="Elimina punto"
-                              style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
-                            >
-                              <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setConfirmDeleteId(selectedPunto.id)}
+                            title="Elimina punto"
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex" }}
+                          >
+                            <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                          </button>
                         </div>
                       )}
                     </>
@@ -773,6 +757,33 @@ export default function PiantinaSidebarWidget({
           </div>
         </div>
       )}
+
+      {/* Popup conferma eliminazione punto */}
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title="Elimina punto"
+        message="Sei sicuro di voler cancellare questo punto? Verranno eliminate anche tutte le sue foto. L'operazione non è reversibile."
+        confirmLabel="Sì, confermo"
+        cancelLabel="Annulla"
+        onConfirm={() => {
+          if (confirmDeleteId) eliminaPuntoMutation({ variables: { id: confirmDeleteId } });
+        }}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      {/* Popup conferma eliminazione scatto */}
+      <ConfirmDialog
+        open={!!confirmDeleteFotoId}
+        title="Elimina scatto"
+        message="Sei sicuro di voler cancellare questo scatto? L'operazione non è reversibile."
+        confirmLabel="Sì, confermo"
+        cancelLabel="Annulla"
+        onConfirm={() => {
+          if (confirmDeleteFotoId) eliminaFoto({ variables: { id: confirmDeleteFotoId } });
+          setConfirmDeleteFotoId(null);
+        }}
+        onCancel={() => setConfirmDeleteFotoId(null)}
+      />
     </>
   );
 }

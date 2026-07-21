@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import PiantinaSidebarWidget from "@/components/piantina/PiantinaSidebarWidget";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import DateDropdown from "@/components/piantina/DateDropdown";
 import { GET_PIANTINA, GET_CANTIERE } from "@/graphql/queries";
 import { UPLOAD_FOTO360, ELIMINA_FOTO360, AGGIORNA_DATA_FOTO360 } from "@/graphql/mutations";
@@ -248,12 +249,10 @@ export default function PiantinaPage() {
     onCompleted: () => refetch(),
   });
 
-  const handleDeleteFoto = useCallback(
-    (fotoId: string) => {
-      eliminaFoto({ variables: { id: fotoId } });
-    },
-    [eliminaFoto]
-  );
+  const [confirmDeleteFotoId, setConfirmDeleteFotoId] = useState<string | null>(null);
+  const handleDeleteFoto = useCallback((fotoId: string) => {
+    setConfirmDeleteFotoId(fotoId); // apre il popup di conferma
+  }, []);
 
   const [aggiornaDataFoto] = useMutation(AGGIORNA_DATA_FOTO360, {
     onCompleted: () => refetch(),
@@ -784,6 +783,20 @@ export default function PiantinaPage() {
           Piantina dockable widget — fixed, ridimensionabile, sopra "Esci"
           ═══════════════════════════════════════════════════════════════════ */}
       <PiantinaSidebarWidget cantiereId={params.id as string} piantinaId={piantinaId} />
+
+      {/* Popup conferma eliminazione scatto */}
+      <ConfirmDialog
+        open={!!confirmDeleteFotoId}
+        title="Elimina scatto"
+        message="Sei sicuro di voler cancellare questo scatto? L'operazione non è reversibile."
+        confirmLabel="Sì, confermo"
+        cancelLabel="Annulla"
+        onConfirm={() => {
+          if (confirmDeleteFotoId) eliminaFoto({ variables: { id: confirmDeleteFotoId } });
+          setConfirmDeleteFotoId(null);
+        }}
+        onCancel={() => setConfirmDeleteFotoId(null)}
+      />
     </div>
   );
 }
