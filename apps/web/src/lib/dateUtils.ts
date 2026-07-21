@@ -69,3 +69,40 @@ export function parseDateFromFilename(filename: string): Date | null {
   const d = new Date(year, month - 1, day, hour, minute, 0, 0);
   return isNaN(d.getTime()) ? null : d;
 }
+
+const MONTHS_IT_ABBR: Record<string, number> = {
+  gen: 0, feb: 1, mar: 2, apr: 3, mag: 4, giu: 5,
+  lug: 6, ago: 7, set: 8, ott: 9, nov: 10, dic: 11,
+};
+
+/**
+ * Estrae la data dal nome file dell'export HoloBuilder (visualizzatore web):
+ *   "Scene 3 (apr. 03, 2025).jpeg"     → 2025-04-03
+ *   "Scene 5 (gen 3 2025).jpeg"        → 2025-01-03 (senza punti/virgola)
+ * Ignora l'eventuale suffisso duplicati "(1)". Ritorna null se non trova la data.
+ */
+export function parseHoloBuilderDate(filename: string): Date | null {
+  if (!filename) return null;
+  const base = filename.replace(/\.[^.]+$/, "");
+  const re = /\(([a-z]{3})\.?\s+(\d{1,2}),?\s+(\d{4})\)/gi;
+  let m: RegExpExecArray | null;
+  let last: RegExpExecArray | null = null;
+  while ((m = re.exec(base)) !== null) last = m;
+  if (!last) return null;
+  const month = MONTHS_IT_ABBR[last[1].toLowerCase()];
+  if (month === undefined) return null;
+  const day = Number(last[2]);
+  const year = Number(last[3]);
+  if (day < 1 || day > 31) return null;
+  const d = new Date(year, month, day, 12, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Prova a ricavare la data di scatto dal nome file, gestendo entrambi i
+ * formati noti (export HoloBuilder "Scene N (mmm. GG, AAAA)" e "GG-MM-AAAA").
+ * Usata all'upload manuale per non far cadere la data sul giorno di caricamento.
+ */
+export function parsePhotoDateFromFilename(filename: string): Date | null {
+  return parseHoloBuilderDate(filename) ?? parseDateFromFilename(filename);
+}

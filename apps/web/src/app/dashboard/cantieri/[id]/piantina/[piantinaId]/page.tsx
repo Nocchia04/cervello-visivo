@@ -18,7 +18,7 @@ import DateDropdown from "@/components/piantina/DateDropdown";
 import { GET_PIANTINA, GET_CANTIERE } from "@/graphql/queries";
 import { UPLOAD_FOTO360, ELIMINA_FOTO360, AGGIORNA_DATA_FOTO360 } from "@/graphql/mutations";
 import { uploadFile } from "@/lib/upload";
-import { safeDate } from "@/lib/dateUtils";
+import { safeDate, parsePhotoDateFromFilename } from "@/lib/dateUtils";
 
 const EmbeddedViewer360 = dynamic(
   () => import("@/components/foto360/EmbeddedViewer360"),
@@ -107,7 +107,16 @@ function UploadFotoButton({
     try {
       for (const file of Array.from(files)) {
         const url = await uploadFile(file);
-        await uploadFoto360({ variables: { puntoDiScattoId: puntoId, url } });
+        // Data di scatto dal nome file (export HoloBuilder o GG-MM-AAAA); se
+        // assente resta il default lato server (giorno di caricamento).
+        const ts = parsePhotoDateFromFilename(file.name);
+        await uploadFoto360({
+          variables: {
+            puntoDiScattoId: puntoId,
+            url,
+            ...(ts ? { timestamp: ts.toISOString() } : {}),
+          },
+        });
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload fallito");
