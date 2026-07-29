@@ -45,6 +45,8 @@ extend type Mutation {
     dimensione: String
   ): PuntoDiScatto!
   aggiornaDimensionePuntoDiScatto(id: ID!, dimensione: String!): PuntoDiScatto!
+  """Imposta la stessa dimensione a TUTTI i punti di una piantina. Ritorna il numero di punti aggiornati."""
+  impostaDimensioneTuttiPunti(piantinaId: ID!, dimensione: String!): Int!
   spostaPuntoDiScatto(
     id: ID!
     x: Float!

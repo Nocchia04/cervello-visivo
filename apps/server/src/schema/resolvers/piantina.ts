@@ -165,6 +165,27 @@ export const piantinaResolvers = {
       });
     },
 
+    impostaDimensioneTuttiPunti: async (
+      _parent: unknown,
+      args: { piantinaId: string; dimensione: string },
+      ctx: GraphQLContext
+    ) => {
+      requireAuth(ctx);
+      const piantina = await ctx.prisma.piantina.findUnique({
+        where: { id: args.piantinaId },
+      });
+      if (!piantina) {
+        throw new GraphQLError("Piantina non trovata", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const res = await ctx.prisma.puntoDiScatto.updateMany({
+        where: { piantinaId: args.piantinaId },
+        data: { dimensione: normalizzaDimensione(args.dimensione) },
+      });
+      return res.count;
+    },
+
     spostaPuntoDiScatto: async (
       _parent: unknown,
       args: { id: string; x: number; y: number },

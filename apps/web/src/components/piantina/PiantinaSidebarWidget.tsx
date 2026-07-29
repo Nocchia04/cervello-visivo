@@ -27,6 +27,7 @@ import {
   AGGIORNA_DATA_FOTO360,
   AGGIORNA_DATA_PUNTO_DI_SCATTO,
   AGGIORNA_DIMENSIONE_PUNTO,
+  IMPOSTA_DIMENSIONE_TUTTI_PUNTI,
 } from "@/graphql/mutations";
 import { safeDate } from "@/lib/dateUtils";
 import { useIsReadOnly } from "@/lib/readOnly";
@@ -250,6 +251,14 @@ export default function PiantinaSidebarWidget({
     [punti, selectedPuntoId]
   );
 
+  // Dimensione condivisa da TUTTI i punti (per evidenziarla nel selettore di
+  // massa); "" se i punti hanno dimensioni miste.
+  const dimensioneComune = useMemo(() => {
+    if (punti.length === 0) return "MEDIO";
+    const first = punti[0].dimensione ?? "MEDIO";
+    return punti.every((p) => (p.dimensione ?? "MEDIO") === first) ? first : "";
+  }, [punti]);
+
   const sortedFoto = useMemo(
     () => (selectedPunto ? sortFotoDesc(selectedPunto.foto360) : []),
     [selectedPunto]
@@ -322,6 +331,9 @@ export default function PiantinaSidebarWidget({
     },
   });
   const [aggiornaDimensione] = useMutation(AGGIORNA_DIMENSIONE_PUNTO, {
+    onCompleted: () => refetch(),
+  });
+  const [impostaDimensioneTutti] = useMutation(IMPOSTA_DIMENSIONE_TUTTI_PUNTI, {
     onCompleted: () => refetch(),
   });
   const [spostaPunto] = useMutation(SPOSTA_PUNTO_DI_SCATTO, {
@@ -507,6 +519,28 @@ export default function PiantinaSidebarWidget({
                   <Pencil className="w-3 h-3" />
                   {editingPositions ? "Fine" : "Modifica"}
                 </button>
+              </div>
+            )}
+
+            {/* ── Dimensione di TUTTI i punti (impostazione di massa) ──────── */}
+            {canEdit && punti.length > 0 && (
+              <div
+                className="px-2 py-1.5"
+                style={{
+                  background: "var(--surface)",
+                  borderBottom: "1px solid var(--border)",
+                  flexShrink: 0,
+                }}
+              >
+                <div className="section-label" style={{ marginBottom: 4 }}>
+                  Dimensione di tutti i punti
+                </div>
+                <DimensioneSelector
+                  value={dimensioneComune}
+                  onChange={(v) =>
+                    impostaDimensioneTutti({ variables: { piantinaId, dimensione: v } })
+                  }
+                />
               </div>
             )}
 

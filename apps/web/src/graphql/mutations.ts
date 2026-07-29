@@ -140,6 +140,12 @@ export const AGGIORNA_DIMENSIONE_PUNTO = gql`
   }
 `;
 
+export const IMPOSTA_DIMENSIONE_TUTTI_PUNTI = gql`
+  mutation ImpostaDimensioneTuttiPunti($piantinaId: ID!, $dimensione: String!) {
+    impostaDimensioneTuttiPunti(piantinaId: $piantinaId, dimensione: $dimensione)
+  }
+`;
+
 export const RINOMINA_PUNTO_DI_SCATTO = gql`
   mutation RinominaPuntoDiScatto($id: ID!, $nome: String!) {
     rinominaPuntoDiScatto(id: $id, nome: $nome) {
