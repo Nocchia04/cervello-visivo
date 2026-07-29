@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, Camera, MapPin, Users, Plus, Archive, RotateCcw } from "lucide-react";
+import { Building2, Camera, MapPin, Users, Plus, Archive, RotateCcw, Clock } from "lucide-react";
 import { safeDate } from "@/lib/dateUtils";
 import { GET_CANTIERI } from "@/graphql/queries";
 import { ARCHIVIA_CANTIERE, RIATTIVA_CANTIERE } from "@/graphql/mutations";
@@ -22,6 +22,7 @@ interface Cantiere {
   thumbnailUrl?: string;
   piantine: Piantina[];
   createdAt: string;
+  ultimoCaricamento?: string | null;
 }
 
 function BentoCard({
@@ -158,12 +159,15 @@ function CantiereCard({
             <Building2 className="w-3.5 h-3.5" />
             {cantiere.piantine.length} piante
           </span>
-          <span className="ml-auto">
-            {safeDate(cantiere.createdAt).toLocaleDateString("it-IT", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })}
+          <span className="ml-auto flex items-center gap-1" title="Ultimo caricamento foto">
+            <Clock className="w-3.5 h-3.5" />
+            {cantiere.ultimoCaricamento
+              ? safeDate(cantiere.ultimoCaricamento).toLocaleDateString("it-IT", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "—"}
           </span>
         </div>
       </div>
@@ -181,9 +185,17 @@ export default function DashboardPage() {
   const [riattiva] = useMutation(RIATTIVA_CANTIERE, { onCompleted: () => refetch() });
 
   const allCantieri: Cantiere[] = data?.cantieri ?? [];
-  const cantieri = mostraArchiviati
+  const cantieri = (mostraArchiviati
     ? allCantieri
-    : allCantieri.filter((c) => c.stato === "ATTIVO");
+    : allCantieri.filter((c) => c.stato === "ATTIVO")
+  )
+    .slice()
+    // Ordine per ultimo caricamento (più recente prima); senza caricamenti in fondo.
+    .sort((a, b) => {
+      const ta = a.ultimoCaricamento ? new Date(a.ultimoCaricamento).getTime() : 0;
+      const tb = b.ultimoCaricamento ? new Date(b.ultimoCaricamento).getTime() : 0;
+      return tb - ta;
+    });
 
   const attiviCount = allCantieri.filter((c) => c.stato === "ATTIVO").length;
   const archiviatiCount = allCantieri.filter((c) => c.stato === "ARCHIVIATO").length;

@@ -13,6 +13,8 @@ type Cantiere {
   utenti: [CantiereUser!]!
   createdAt: String!
   updatedAt: String!
+  """Data dell'ultima foto caricata nel cantiere (ISO), o null se nessuna foto."""
+  ultimoCaricamento: String
 }
 
 input CreateCantiereInput {

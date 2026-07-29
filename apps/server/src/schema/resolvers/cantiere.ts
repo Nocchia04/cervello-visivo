@@ -183,6 +183,13 @@ export const cantiereResolvers = {
         include: { user: true },
         orderBy: { createdAt: "asc" },
       }),
+    ultimoCaricamento: async (parent: { id: string }, _args: unknown, ctx: GraphQLContext) => {
+      const res = await ctx.prisma.foto360.aggregate({
+        where: { puntoDiScatto: { piantina: { cantiereId: parent.id } } },
+        _max: { createdAt: true },
+      });
+      return res._max.createdAt ? res._max.createdAt.toISOString() : null;
+    },
   },
 
   CantiereUser: {

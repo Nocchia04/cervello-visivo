@@ -21,6 +21,7 @@ export const GET_CANTIERI = gql`
       stato
       thumbnailUrl
       createdAt
+      ultimoCaricamento
       piantine {
         id
         nome

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, Camera, MapPin, Plus, Archive, RotateCcw, Search, X } from "lucide-react";
+import { Building2, Camera, MapPin, Plus, Archive, RotateCcw, Search, X, Clock } from "lucide-react";
 import { safeDate } from "@/lib/dateUtils";
 import { GET_CANTIERI } from "@/graphql/queries";
 import { ARCHIVIA_CANTIERE, RIATTIVA_CANTIERE } from "@/graphql/mutations";
@@ -22,6 +22,7 @@ interface Cantiere {
   thumbnailUrl?: string;
   piantine: Piantina[];
   createdAt: string;
+  ultimoCaricamento?: string | null;
 }
 
 export default function CantieriPage() {
@@ -49,6 +50,13 @@ export default function CantieriPage() {
         c.nome.toLowerCase().includes(trimmedQuery) ||
         c.indirizzo.toLowerCase().includes(trimmedQuery)
       );
+    })
+    // Ordine per ultimo caricamento (più recente prima); senza caricamenti in fondo.
+    .slice()
+    .sort((a, b) => {
+      const ta = a.ultimoCaricamento ? new Date(a.ultimoCaricamento).getTime() : 0;
+      const tb = b.ultimoCaricamento ? new Date(b.ultimoCaricamento).getTime() : 0;
+      return tb - ta;
     });
 
   return (
@@ -251,8 +259,11 @@ export default function CantieriPage() {
                     <Building2 className="w-3.5 h-3.5" />
                     {cantiere.piantine.length} piante
                   </span>
-                  <span className="ml-auto">
-                    {safeDate(cantiere.createdAt).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })}
+                  <span className="ml-auto flex items-center gap-1" title="Ultimo caricamento foto">
+                    <Clock className="w-3.5 h-3.5" />
+                    {cantiere.ultimoCaricamento
+                      ? safeDate(cantiere.ultimoCaricamento).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })
+                      : "—"}
                   </span>
                 </div>
               </div>
