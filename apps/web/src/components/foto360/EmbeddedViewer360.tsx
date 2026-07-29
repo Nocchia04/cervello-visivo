@@ -280,9 +280,19 @@ export default function EmbeddedViewer360({
     });
     observer.observe(container);
 
+    // Zoom con la rotellina: regola il FOV della camera (su = zoom in, giù =
+    // zoom out). Listener non-passivo per poter bloccare lo scroll della pagina.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.05, 30, 90);
+      camera.updateProjectionMatrix();
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+
     return () => {
       cancelAnimationFrame(rafRef.current);
       observer.disconnect();
+      container.removeEventListener("wheel", onWheel);
       renderer.dispose();
       material.dispose();
       geometry.dispose();

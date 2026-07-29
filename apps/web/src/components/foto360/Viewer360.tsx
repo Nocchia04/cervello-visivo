@@ -227,9 +227,18 @@ export default function Viewer360({
     };
     window.addEventListener("resize", onResize);
 
+    // Zoom con la rotellina (FOV): su = zoom in, giù = zoom out.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.05, 30, 90);
+      camera.updateProjectionMatrix();
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+
     return () => {
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", onResize);
+      canvas.removeEventListener("wheel", onWheel);
       renderer.dispose();
       material.dispose();
       geometry.dispose();
