@@ -183,12 +183,15 @@ export const cantiereResolvers = {
         include: { user: true },
         orderBy: { createdAt: "asc" },
       }),
+    // Data della foto PIÙ RECENTE del cantiere (data di scatto = timestamp),
+    // non la data di upload: se si caricano in blocco foto vecchie, conta la
+    // data reale dello scatto, non il giorno del caricamento.
     ultimoCaricamento: async (parent: { id: string }, _args: unknown, ctx: GraphQLContext) => {
       const res = await ctx.prisma.foto360.aggregate({
         where: { puntoDiScatto: { piantina: { cantiereId: parent.id } } },
-        _max: { createdAt: true },
+        _max: { timestamp: true },
       });
-      return res._max.createdAt ? res._max.createdAt.toISOString() : null;
+      return res._max.timestamp ? res._max.timestamp.toISOString() : null;
     },
   },
 
