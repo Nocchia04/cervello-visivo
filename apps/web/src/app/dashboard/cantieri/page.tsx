@@ -259,11 +259,19 @@ export default function CantieriPage() {
                     <Building2 className="w-3.5 h-3.5" />
                     {cantiere.piantine.length} piante
                   </span>
-                  <span className="ml-auto flex items-center gap-1" title="Ultimo caricamento foto">
-                    <Clock className="w-3.5 h-3.5" />
-                    {cantiere.ultimoCaricamento
-                      ? safeDate(cantiere.ultimoCaricamento).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })
-                      : "—"}
+                  <span className="ml-auto text-right leading-tight" title="Data dell'ultima foto caricata">
+                    <span
+                      className="block"
+                      style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-subtle)" }}
+                    >
+                      Ultimo caricamento
+                    </span>
+                    <span className="flex items-center gap-1 justify-end">
+                      <Clock className="w-3 h-3" />
+                      {cantiere.ultimoCaricamento
+                        ? safeDate(cantiere.ultimoCaricamento).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—"}
+                    </span>
                   </span>
                 </div>
               </div>
