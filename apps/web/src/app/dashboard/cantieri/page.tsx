@@ -26,7 +26,7 @@ interface Cantiere {
 }
 
 export default function CantieriPage() {
-  const [mostraArchiviati, setMostraArchiviati] = useState(false);
+  const [vista, setVista] = useState<"ATTIVO" | "ARCHIVIATO">("ATTIVO");
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
 
@@ -43,7 +43,7 @@ export default function CantieriPage() {
   // Match case-insensitive. La query viene trimmata per ignorare spazi accidentali.
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const cantieri = allCantieri
-    .filter((c) => mostraArchiviati || c.stato === "ATTIVO")
+    .filter((c) => c.stato === vista)
     .filter((c) => {
       if (!trimmedQuery) return true;
       return (
@@ -135,21 +135,31 @@ export default function CantieriPage() {
             )}
           </div>
 
-          {/* Mostra archiviati */}
-          <label
-            className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap flex-shrink-0"
-            style={{ color: "var(--text-muted)" }}
+          {/* Switch Attivi / Archiviati */}
+          <div
+            className="flex items-center flex-shrink-0 rounded-xl p-0.5"
+            style={{ background: "var(--surface-hover)", border: "1px solid var(--border)" }}
           >
-            <input
-              type="checkbox"
-              checked={mostraArchiviati}
-              onChange={(e) => setMostraArchiviati(e.target.checked)}
-              className="rounded"
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span className="hidden sm:inline">Mostra archiviati</span>
-            <span className="sm:hidden">Archiviati</span>
-          </label>
+            {(["ATTIVO", "ARCHIVIATO"] as const).map((v) => {
+              const active = vista === v;
+              return (
+                <button
+                  key={v}
+                  onClick={() => setVista(v)}
+                  className="text-sm font-medium whitespace-nowrap transition-colors"
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 10,
+                    background: active ? "var(--surface)" : "transparent",
+                    color: active ? "var(--text)" : "var(--text-muted)",
+                    boxShadow: active ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                  }}
+                >
+                  {v === "ATTIVO" ? "Attivi" : "Archiviati"}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -171,6 +181,17 @@ export default function CantieriPage() {
             <button onClick={() => setSearchQuery("")} className="btn-secondary">
               <X className="w-4 h-4" />
               Cancella ricerca
+            </button>
+          </div>
+        ) : vista === "ARCHIVIATO" ? (
+          <div className="card flex flex-col items-center justify-center py-20 text-center">
+            <Archive className="w-16 h-16 mb-4 opacity-20" />
+            <p className="font-medium text-lg">Nessun cantiere archiviato</p>
+            <p className="text-sm mt-1 mb-6" style={{ color: "var(--text-muted)" }}>
+              I cantieri archiviati compariranno qui
+            </p>
+            <button onClick={() => setVista("ATTIVO")} className="btn-secondary">
+              Vedi i cantieri attivi
             </button>
           </div>
         ) : (
