@@ -184,7 +184,7 @@ function CantiereCard({
 }
 
 export default function DashboardPage() {
-  const [mostraArchiviati, setMostraArchiviati] = useState(false);
+  const [vista, setVista] = useState<"ATTIVO" | "ARCHIVIATO">("ATTIVO");
   const { data, loading, refetch } = useQuery(GET_CANTIERI, {
     variables: { includiArchiviati: true },
   });
@@ -193,10 +193,8 @@ export default function DashboardPage() {
   const [riattiva] = useMutation(RIATTIVA_CANTIERE, { onCompleted: () => refetch() });
 
   const allCantieri: Cantiere[] = data?.cantieri ?? [];
-  const cantieri = (mostraArchiviati
-    ? allCantieri
-    : allCantieri.filter((c) => c.stato === "ATTIVO")
-  )
+  const cantieri = allCantieri
+    .filter((c) => c.stato === vista)
     .slice()
     // Ordine per ultimo caricamento (più recente prima); senza caricamenti in fondo.
     .sort((a, b) => {
@@ -244,19 +242,31 @@ export default function DashboardPage() {
       {/* Cantieri section */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Cantieri</h2>
-        <label
-          className="flex items-center gap-2 text-sm cursor-pointer"
-          style={{ color: "var(--text-muted)" }}
+        {/* Switch Attivi / Archiviati */}
+        <div
+          className="flex items-center rounded-xl p-0.5"
+          style={{ background: "var(--surface-hover)", border: "1px solid var(--border)" }}
         >
-          <input
-            type="checkbox"
-            checked={mostraArchiviati}
-            onChange={(e) => setMostraArchiviati(e.target.checked)}
-            className="rounded"
-            style={{ accentColor: "var(--accent)" }}
-          />
-          Mostra archiviati
-        </label>
+          {(["ATTIVO", "ARCHIVIATO"] as const).map((v) => {
+            const active = vista === v;
+            return (
+              <button
+                key={v}
+                onClick={() => setVista(v)}
+                className="text-sm font-medium whitespace-nowrap transition-colors"
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 10,
+                  background: active ? "var(--surface)" : "transparent",
+                  color: active ? "var(--text)" : "var(--text-muted)",
+                  boxShadow: active ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                }}
+              >
+                {v === "ATTIVO" ? "Attivi" : "Archiviati"}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {loading ? (
@@ -267,19 +277,30 @@ export default function DashboardPage() {
           />
         </div>
       ) : cantieri.length === 0 ? (
-        <div
-          className="card flex flex-col items-center justify-center py-20 text-center"
-        >
-          <Building2 className="w-16 h-16 mb-4 opacity-20" />
-          <p className="font-medium text-lg">Nessun cantiere</p>
-          <p className="text-sm mt-1 mb-6" style={{ color: "var(--text-muted)" }}>
-            Inizia creando il tuo primo cantiere
-          </p>
-          <Link href="/dashboard/cantieri/nuovo" className="btn-primary">
-            <Plus className="w-4 h-4" />
-            Crea cantiere
-          </Link>
-        </div>
+        vista === "ARCHIVIATO" ? (
+          <div className="card flex flex-col items-center justify-center py-20 text-center">
+            <Archive className="w-16 h-16 mb-4 opacity-20" />
+            <p className="font-medium text-lg">Nessun cantiere archiviato</p>
+            <p className="text-sm mt-1 mb-6" style={{ color: "var(--text-muted)" }}>
+              I cantieri archiviati compariranno qui
+            </p>
+            <button onClick={() => setVista("ATTIVO")} className="btn-secondary">
+              Vedi i cantieri attivi
+            </button>
+          </div>
+        ) : (
+          <div className="card flex flex-col items-center justify-center py-20 text-center">
+            <Building2 className="w-16 h-16 mb-4 opacity-20" />
+            <p className="font-medium text-lg">Nessun cantiere</p>
+            <p className="text-sm mt-1 mb-6" style={{ color: "var(--text-muted)" }}>
+              Inizia creando il tuo primo cantiere
+            </p>
+            <Link href="/dashboard/cantieri/nuovo" className="btn-primary">
+              <Plus className="w-4 h-4" />
+              Crea cantiere
+            </Link>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {cantieri.map((cantiere) => (
