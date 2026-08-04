@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import Link from "next/link";
-import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound, FileArchive, Pencil } from "lucide-react";
+import { Users, Plus, X, Eye, EyeOff, Shield, Building2, Check, UserCheck, UserX, Trash2, KeyRound, FileArchive, Pencil, Search } from "lucide-react";
 import { GET_UTENTI, GET_CANTIERI } from "@/graphql/queries";
 import { CREA_OPERATORE, ASSEGNA_OPERATORE_CANTIERE, RIMUOVI_OPERATORE_CANTIERE, ELIMINA_OPERATORE, CAMBIA_PASSWORD_OPERATORE, AGGIORNA_OPERATORE } from "@/graphql/mutations";
 
@@ -421,6 +421,7 @@ export default function AdminPage() {
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
   const [passwordUserId, setPasswordUserId] = useState<string | null>(null);
   const [contattiUserId, setContattiUserId] = useState<string | null>(null);
+  const [operatoreQuery, setOperatoreQuery] = useState("");
 
   const { data: utentiData, loading: utentiLoading, refetch: refetchUtenti } = useQuery(GET_UTENTI);
   const { data: cantieriData } = useQuery(GET_CANTIERI, { variables: { includiArchiviati: false } });
@@ -441,6 +442,15 @@ export default function AdminPage() {
   const utenti: User[] = utentiData?.utenti ?? [];
   const cantieri: Cantiere[] = cantieriData?.cantieri ?? [];
   const operatori = utenti.filter((u) => u.role === "CAPO_CANTIERE");
+
+  // Ricerca operatori su tutti i campi (nome, cognome, email, email personale, telefono).
+  const oq = operatoreQuery.trim().toLowerCase();
+  const operatoriFiltrati = oq
+    ? operatori.filter((u) =>
+        [u.nome, u.cognome, u.email, u.emailPersonale, u.telefono]
+          .some((v) => v && String(v).toLowerCase().includes(oq))
+      )
+    : operatori;
 
   const selectedUser = operatori.find((u) => u.id === selectedUserId) ?? null;
   const assignedIds = new Set(selectedUser?.cantieri.map((c) => c.cantiereId) ?? []);
@@ -492,6 +502,35 @@ export default function AdminPage() {
             Operatori ({operatori.length})
           </h2>
 
+          {/* Ricerca operatori */}
+          {operatori.length > 0 && (
+            <div className="relative mb-3">
+              <Search
+                className="w-4 h-4 absolute pointer-events-none"
+                style={{ left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}
+              />
+              <input
+                type="text"
+                value={operatoreQuery}
+                onChange={(e) => setOperatoreQuery(e.target.value)}
+                placeholder="Cerca per nome, email, telefono..."
+                aria-label="Cerca operatore"
+                className="input-field w-full"
+                style={{ paddingLeft: 36, paddingRight: operatoreQuery ? 36 : undefined }}
+              />
+              {operatoreQuery && (
+                <button
+                  onClick={() => setOperatoreQuery("")}
+                  className="absolute"
+                  style={{ right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}
+                  aria-label="Cancella ricerca"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             {utentiLoading ? (
               <div className="card flex justify-center py-10">
@@ -505,8 +544,16 @@ export default function AdminPage() {
                   Crea il primo operatore con il pulsante in alto
                 </p>
               </div>
+            ) : operatoriFiltrati.length === 0 ? (
+              <div className="card text-center py-10">
+                <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>Nessun operatore trovato</p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+                  Nessun risultato per “{operatoreQuery}”
+                </p>
+              </div>
             ) : (
-              operatori.map((user) => {
+              operatoriFiltrati.map((user) => {
                 const isSelected = selectedUserId === user.id;
                 const count = user.cantieri.length;
                 return (
